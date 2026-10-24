@@ -258,8 +258,9 @@ function buildOpenClash(sets) {
   L.push('[General]');
   L.push('# 显式指定 WAN 区域名，修复「设置仅允许内网功能失败，无法获取 IPv4 的 WAN 接口名称」');
   L.push('INTRANET_ALLOWED_WAN_NAME = wan');
-  L.push('# 开启域名嗅探。fake-ip 下域名会解析成 198.18.x.x，没有嗅探时 GEOIP 类规则对网页访问无效');
-  L.push('ENABLE_META_SNIFFER = 1');
+  L.push('# 域名嗅探：实测加上它会导致内核启动卡在第五步（16:13 / 16:17 两次失败），已停用。');
+  L.push('# 想启用就删掉下面这行的 # 号。你的订阅已有 GeoSite(cn) 和 Custom_* 规则，不依赖嗅探。');
+  L.push('# ENABLE_META_SNIFFER = 1');
   L.push('# 本模块内容更新（CRON 拉到新版）后自动重启插件，否则新规则不会加载');
   L.push('RESTART = true');
   L.push('');
