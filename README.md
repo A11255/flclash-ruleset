@@ -66,12 +66,13 @@ sources.json                ★ 唯一真源
 tools/build.js              生成器（零依赖，Node 18+）
 .github/workflows/build.yml CI
 dist/
-├── flclash-override.js     → FlClash
+├── flclash-override.js     → FlClash 覆写脚本
 ├── mihomo/                 → 9 个 rule-provider yaml
-└── loon/loon.conf          → Loon
+└── loon/loon.conf          → Loon 配置
 _upstream/                  上游 .rule 缓存（不入库）
-ruleset/                    【已废弃】旧的 22 个手工 yaml
 ```
+
+仓库只有上面这些。旧的 `ruleset/` 22 个手工 yaml、`dist/loon/*.list` 已于 2026-10-24 删除——全部由 `dist/mihomo/` 和上游直连替代。
 
 ## 说明
 
