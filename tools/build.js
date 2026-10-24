@@ -275,43 +275,47 @@ function buildOpenClash(sets) {
   L.push('');
 
   // ── 规则：前置插入，保证在订阅规则之前、MATCH 之前生效 ──
-  // 只使用 DIRECT / REJECT 两个内建出站，不写任何自定义策略组名。
-  // 原因：OpenClash 的策略组名由订阅模板决定（🚀 节点选择 / 🐟 漏网之鱼 …），
-  // 名字对不上时内核直接报 policy not found、整份配置拒绝加载。
+  // DIRECT / REJECT 是内建出站，永远安全；PROXY 必须映射到路由器上真实存在的组名
+  // （sources.json → policyMap.openclash.PROXY）。名字不存在时内核报 policy not found、
+  // 整份配置拒绝加载，所以映射缺失时自动降级为「注释掉」而不是直接写进配置。
+  const ocProxy = pm('openclash', 'PROXY');
+  const proxyUsable = !!ocProxy && ocProxy !== 'PROXY' && !ocProxy.includes('你的代理策略组');
+
   L.push('# +rules = 插入到数组开头，所以这里的顺序就是优先级');
-  L.push('# 本段只使用 DIRECT / REJECT 两个内建出站，不依赖任何自定义策略组名，');
-  L.push('# 因此不管你用哪套 OpenClash 模板都不会因为「找不到策略组」而加载失败。');
+  if (proxyUsable) {
+    L.push('# DIRECT / REJECT 为内建出站；PROXY 映射到策略组「' + ocProxy + '」');
+    L.push('# 若该组名在你的配置里不存在，改为 sources.json → policyMap.openclash.PROXY，重新构建');
+  } else {
+    L.push('# ⚠ policyMap.openclash.PROXY 未配置，PROXY 类规则已自动注释（见文末）');
+  }
   L.push('+rules:');
   for (const g of src.guardRules || []) L.push("  - '" + g + "'");
 
-  const builtin = [];   // 直接用 DIRECT / REJECT 的规则
-  const proxyR = [];    // 需要自定义策略组的规则，默认注释掉
-  const emit = (line, policy) => {
-    if (policy === 'PROXY') proxyR.push(line);
-    else builtin.push(line);
-  };
-
+  // 按 KW → domain → IP 三段输出，段内保持 sources.json 的数组顺序，
+  // 与 FlClash / Loon 两端完全同源。PROXY 类只在其组名可用时就地输出，
+  // 否则收集起来在末尾统一注释（保住顺序语义，不因降级而错位）。
+  const fallback = [];
   for (const cls of ['kw', 'domain', 'ip']) {
     for (const s of sets) {
       if (!s.k || !s.k[cls].size) continue;
-      const p = pm('flclash', s.u.policy);
+      const p = pm('openclash', s.u.policy);
       const suffix = cls === 'ip' ? ',no-resolve' : '';
       const nm = s.u.name + (cls === 'kw' ? '_KW' : cls === 'ip' ? '_IP' : '');
-      emit('RULE-SET,' + nm + ',' + p + suffix, s.u.policy);
+      const line = 'RULE-SET,' + nm + ',' + p + suffix;
+      if (s.u.policy === 'PROXY' && !proxyUsable) {
+        fallback.push(line);
+        continue;
+      }
+      L.push("  - '" + line + "'");
     }
   }
-  for (const r of builtin) L.push("  - '" + r + "'");
 
-  if (proxyR.length) {
+  if (fallback.length) {
     L.push('');
-    L.push('# ── 以下需要自定义策略组，默认不启用 ──────────────────────────');
-    L.push('# 你的 OpenClash 里没有名为「' + pm('flclash', 'PROXY') + '」的策略组，所以这部分先注释掉。');
-    L.push('# 不启用也不影响分流：没被上面规则命中的流量会落到配置末尾的 MATCH，');
-    L.push('# 那个目标本来就是代理组（你日志里是 🐟 漏网之鱼），效果一致。');
-    L.push('#');
-    L.push('# 确实要启用：去掉下面 ' + proxyR.length + ' 行的 # ，');
-    L.push('# 并把「你的代理策略组」换成策略组页面里真实存在的名字。');
-    for (const r of proxyR) L.push("#  - '" + r.replace(',节点选择', ',你的代理策略组') + "'");
+    L.push('# ── 以下需要自定义策略组，因未配置组名而默认不启用 ────────────');
+    L.push('# 要启用，改 sources.json → policyMap.openclash.PROXY 为真实组名后重新构建；');
+    L.push('# 不要手改本文件，CI 每次都会重新生成。');
+    for (const r of fallback) L.push("#  - '" + r + "'");
   }
   L.push('');
 

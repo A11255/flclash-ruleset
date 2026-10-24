@@ -131,9 +131,11 @@
 
   "tunExcludeExtra": ["100.64.0.0/10"],
 
+  "_policyMapComment": "PROXY 必须填对应端真实存在的策略组名。openclash 的值是路由器上 OpenClash 的策略组，改订阅模板后组名变了要同步改这里。",
   "policyMap": {
     "flclash": { "PROXY": "节点选择", "DIRECT": "DIRECT", "REJECT": "REJECT" },
-    "loon": { "PROXY": "节点选择", "DIRECT": "DIRECT", "REJECT": "REJECT" }
+    "loon": { "PROXY": "节点选择", "DIRECT": "DIRECT", "REJECT": "REJECT" },
+    "openclash": { "PROXY": "🚀 手动选择", "DIRECT": "DIRECT", "REJECT": "REJECT" }
   },
 
   "_dropComment": "mihomo 不支持这些规则类型，转换时跳过并写进日志",
