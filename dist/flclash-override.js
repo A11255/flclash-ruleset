@@ -1,6 +1,6 @@
 // ============================================================================
 // FlClash 覆写脚本 · 自动生成，请勿手改
-// 源：sources.json → tools/build.js → 从 Code-Dramatist/Rule_Actions 转换
+// 源：sources.json → tools/build.js
 // 改规则请改 sources.json 并 push，CI 会重新生成
 // ============================================================================
 
@@ -30,13 +30,13 @@ var PROVIDERS = {
     interval: UPDATE_INTERVAL,
     path: "./providers/" + "Reject_Rule_KW.yaml"
   },
-  Reject_Rule: {
+  rejectAd_KW: {
     type: "http",
-    behavior: "domain",
+    behavior: "classical",
     format: "yaml",
-    url: URL_BASE + "Reject_Rule_Domain.yaml",
+    url: URL_BASE + "rejectAd_KW.yaml",
     interval: UPDATE_INTERVAL,
-    path: "./providers/" + "Reject_Rule_Domain.yaml"
+    path: "./providers/" + "rejectAd_KW.yaml"
   },
   Direct_Rule_KW: {
     type: "http",
@@ -46,14 +46,6 @@ var PROVIDERS = {
     interval: UPDATE_INTERVAL,
     path: "./providers/" + "Direct_Rule_KW.yaml"
   },
-  Direct_Rule: {
-    type: "http",
-    behavior: "domain",
-    format: "yaml",
-    url: URL_BASE + "Direct_Rule_Domain.yaml",
-    interval: UPDATE_INTERVAL,
-    path: "./providers/" + "Direct_Rule_Domain.yaml"
-  },
   Proxy_Rule_KW: {
     type: "http",
     behavior: "classical",
@@ -61,6 +53,78 @@ var PROVIDERS = {
     url: URL_BASE + "Proxy_Rule_KW.yaml",
     interval: UPDATE_INTERVAL,
     path: "./providers/" + "Proxy_Rule_KW.yaml"
+  },
+  Reject_Rule: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Reject_Rule_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Reject_Rule_Domain.yaml"
+  },
+  AdBlock: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "AdBlock_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "AdBlock_Domain.yaml"
+  },
+  adrules: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "adrules_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "adrules_Domain.yaml"
+  },
+  rejectAd: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "rejectAd_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "rejectAd_Domain.yaml"
+  },
+  Adblock4limbo: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Adblock4limbo_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Adblock4limbo_Domain.yaml"
+  },
+  apple_update: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "apple_update_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "apple_update_Domain.yaml"
+  },
+  Google_FCM: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Google_FCM_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Google_FCM_Domain.yaml"
+  },
+  Apple_Push: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Apple_Push_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Apple_Push_Domain.yaml"
+  },
+  Direct_Rule: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Direct_Rule_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Direct_Rule_Domain.yaml"
   },
   Proxy_Rule: {
     type: "http",
@@ -77,6 +141,38 @@ var PROVIDERS = {
     url: URL_BASE + "Reject_Rule_IP.yaml",
     interval: UPDATE_INTERVAL,
     path: "./providers/" + "Reject_Rule_IP.yaml"
+  },
+  AdBlock_IP: {
+    type: "http",
+    behavior: "ipcidr",
+    format: "yaml",
+    url: URL_BASE + "AdBlock_IP.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "AdBlock_IP.yaml"
+  },
+  rejectAd_IP: {
+    type: "http",
+    behavior: "ipcidr",
+    format: "yaml",
+    url: URL_BASE + "rejectAd_IP.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "rejectAd_IP.yaml"
+  },
+  Google_FCM_IP: {
+    type: "http",
+    behavior: "ipcidr",
+    format: "yaml",
+    url: URL_BASE + "Google_FCM_IP.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Google_FCM_IP.yaml"
+  },
+  Apple_Push_IP: {
+    type: "http",
+    behavior: "ipcidr",
+    format: "yaml",
+    url: URL_BASE + "Apple_Push_IP.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Apple_Push_IP.yaml"
   },
   Direct_Rule_IP: {
     type: "http",
@@ -110,12 +206,24 @@ var RULES = [
 "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
 "IP-CIDR6,fe80::/10,DIRECT,no-resolve",
 "RULE-SET,Reject_Rule_KW,REJECT",
-"RULE-SET,Reject_Rule,REJECT",
+"RULE-SET,rejectAd_KW,REJECT",
 "RULE-SET,Direct_Rule_KW,DIRECT",
-"RULE-SET,Direct_Rule,DIRECT",
 "RULE-SET,Proxy_Rule_KW,节点选择",
+"RULE-SET,Reject_Rule,REJECT",
+"RULE-SET,AdBlock,REJECT",
+"RULE-SET,adrules,REJECT",
+"RULE-SET,rejectAd,REJECT",
+"RULE-SET,Adblock4limbo,REJECT",
+"RULE-SET,apple_update,DIRECT",
+"RULE-SET,Google_FCM,DIRECT",
+"RULE-SET,Apple_Push,DIRECT",
+"RULE-SET,Direct_Rule,DIRECT",
 "RULE-SET,Proxy_Rule,节点选择",
 "RULE-SET,Reject_Rule_IP,REJECT,no-resolve",
+"RULE-SET,AdBlock_IP,REJECT,no-resolve",
+"RULE-SET,rejectAd_IP,REJECT,no-resolve",
+"RULE-SET,Google_FCM_IP,DIRECT,no-resolve",
+"RULE-SET,Apple_Push_IP,DIRECT,no-resolve",
 "RULE-SET,Direct_Rule_IP,DIRECT,no-resolve",
 "RULE-SET,Proxy_Rule_IP,节点选择,no-resolve",
 "GEOIP,CN,DIRECT",

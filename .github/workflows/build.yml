@@ -24,6 +24,13 @@ jobs:
       - name: 生成 dist
         run: node tools/build.js
 
+      - name: 校验产物
+        run: |
+          node --check dist/flclash-override.js
+          test -s dist/loon/loon.conf
+          test -d dist/mihomo
+          echo "provider 文件数: $(ls dist/mihomo | wc -l)"
+
       - name: 提交产物
         run: |
           git config user.name "github-actions[bot]"
