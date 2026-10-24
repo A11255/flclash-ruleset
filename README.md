@@ -126,28 +126,43 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 能做到这一点是因为 OpenClash 端**只做广告拦截**，不再重复下发「国内直连」和「走代理」两类规则——那两件事你订阅自带的 `GeoSite(cn)` / `Custom_Direct_Domain` / `Custom_Proxy_Domain` 已经在做了。
 
-### 为什么 OpenClash 端只有 1.7 万条，而 FlClash 有 48 万条
+### 为什么 OpenClash 端只有 1.7 万条
 
-**这是实测得出的，不是保守估计。** 48 万条规则（21 个 provider）加载到路由器上，内核会在启动「第五步」之后卡死：
+**先说结论：不是性能问题。** N1（S905D + 2GB RAM）跑 48 万条完全够，15:52 那次全量启动是成功的——30 个 provider 全部加载，`www.baidu.com` 正常命中 `Direct_Rule_KW`。
 
-| 时间 | 覆写模块 | 结果 |
-|---|---|---|
-| 16:17:42 | 开 | 停在第五步，**35 分钟没有第六步**，「内核状态检查」始终不出现 |
-| 16:52:46 | 关 | 16:52:58 启动成功，**全程 12 秒** |
+精简是为了**排除故障变量**，实测记录如下：
 
-关掉后 12 秒起来，带上是 35 分钟起不来，差别只有那批规则。
+| 启动时间 | 模块内容 | provider 启动数 | 结果 |
+|---|---|---|---|
+| 15:52 | 18 条规则 / 21 provider | **30 个** | ✅ 正常，规则生效 |
+| 16:13 | 21 条 + `[General]` | 未知（日志截断） | 停在第五步 |
+| 16:17 | 21 条 + `[General]` | **0 个** | ❌ 内核未启动 |
+| 16:52 | 无模块 | 9 个（订阅自带） | ✅ 12 秒起来 |
 
-所以 OpenClash 端在 `sources.json` 里给三个大表标了 `"openclash": false`：
+16:17 那次**一个 provider 都没启动、零条内核活动**，说明内核在初始化之前就失败退出了——这是配置解析层面的问题，不是负载问题。
+
+15:52 和 16:17 之间新增了两个变量：
+
+1. `[General] ENABLE_META_SNIFFER = 1`
+2. `Proxy_Rule` 三条规则指向 `🚀 手动选择`
+
+**精简版去掉了第 2 个变量**（不再有 `Proxy_Rule`），所以「策略组名不存在导致配置被拒」这个风险已经归零。第 1 个变量暂时保留。
+
+如果精简版仍然启动失败，下一步就是把 `ENABLE_META_SNIFFER` 也去掉，最小化到只留 `INTRANET_ALLOWED_WAN_NAME`。
+
+### 精简版砍了什么
+
+`sources.json` 里三个大标了 `"openclash": false`：
 
 | 源 | 条数 | 为什么不进 OpenClash |
 |---|---|---|
-| `Reject_Rule` | 304969 | 太重。改用 4 个小广告表合计 1.7 万条替代 |
+| `Reject_Rule` | 304969 | 减少首次下载量（7.4 MB），并把变量控制到最小 |
 | `Direct_Rule` | 110580 | 订阅自带 `GeoSite(cn)`，日志实测 `www.baidu.com → GeoSite(cn) → 🎯 全球直连` |
-| `Proxy_Rule` | 35083 | 订阅自带 `Custom_Proxy_Domain` |
+| `Proxy_Rule` | 35083 | 订阅自带 `Custom_Proxy_Domain`，且它需要引用策略组名 |
 
-**这三行只影响 OpenClash。** FlClash 和 Loon 端仍然是全量，因为电脑和手机扛得住。
+**待基线验证通过后**，如果想让路由器也用 30 万条广告表，把 `Reject_Rule` 那行的 `"openclash": false` 删掉重新构建即可——N1 的内存扛得住，代价是首次启动多下载 7.4 MB。
 
-想让路由器也用全量广告表（需要 256MB 以上可用内存），把 `sources.json` 里 `Reject_Rule` 的 `"openclash": false` 删掉即可。
+**这三行只影响 OpenClash。** FlClash 和 Loon 端仍然是全量。
 
 ### 一个需要注意的优先级副作用
 
