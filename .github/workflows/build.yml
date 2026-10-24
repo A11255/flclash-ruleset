@@ -1,0 +1,37 @@
+name: build
+
+on:
+  push:
+    paths:
+      - 'sources.json'
+      - 'tools/build.js'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 生成 dist
+        run: node tools/build.js
+
+      - name: 提交产物
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist
+          if git diff --staged --quiet; then
+            echo "产物无变化"
+          else
+            git commit -m "chore: rebuild dist from sources.json"
+            git push
+          fi

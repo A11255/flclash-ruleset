@@ -1,0 +1,171 @@
+{
+  "_comment": "规则集地址中心 · 唯一需要手工维护的文件。改完 push，GitHub Actions 自动生成 FlClash 脚本和 Loon 配置到 dist/ 目录。",
+  "version": 2,
+  "rulesets": [
+    {
+      "name": "Reject_Rule",
+      "file": "ruleset/Reject_Rule.yaml",
+      "behavior": "domain",
+      "policy": "REJECT",
+      "targets": ["flclash"],
+      "note": "30.5 万条，仅 FlClash。Loon 加载会崩内存"
+    },
+    {
+      "name": "Reject_Rule_IP",
+      "file": "ruleset/Reject_Rule_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Reject_Rule_KW",
+      "file": "ruleset/Reject_Rule_KW.yaml",
+      "behavior": "classical",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "AdBlock",
+      "file": "ruleset/AdBlock.yaml",
+      "behavior": "domain",
+      "policy": "REJECT",
+      "targets": ["loon"],
+      "note": "7155 条，Loon 端作为主力广告表"
+    },
+    {
+      "name": "AdBlock_IP",
+      "file": "ruleset/AdBlock_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Adblock4limbo_KW",
+      "file": "ruleset/Adblock4limbo_KW.yaml",
+      "behavior": "classical",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "rejectAd_KW",
+      "file": "ruleset/rejectAd_KW.yaml",
+      "behavior": "classical",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "rejectAd_IP",
+      "file": "ruleset/rejectAd_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "REJECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Apple_Push",
+      "file": "ruleset/Apple_Push.yaml",
+      "behavior": "domain",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Apple_Push_IP",
+      "file": "ruleset/Apple_Push_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "apple_update",
+      "file": "ruleset/apple_update.yaml",
+      "behavior": "domain",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Google_FCM",
+      "file": "ruleset/Google_FCM.yaml",
+      "behavior": "domain",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Google_FCM_IP",
+      "file": "ruleset/Google_FCM_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Direct_Rule",
+      "file": "ruleset/Direct_Rule.yaml",
+      "behavior": "domain",
+      "policy": "DIRECT",
+      "targets": ["flclash"],
+      "note": "11 万条，仅 FlClash。Loon 用 GEOIP,CN 代替"
+    },
+    {
+      "name": "Direct_Rule_IP",
+      "file": "ruleset/Direct_Rule_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "DIRECT",
+      "targets": ["flclash"]
+    },
+    {
+      "name": "Direct_Rule_KW",
+      "file": "ruleset/Direct_Rule_KW.yaml",
+      "behavior": "classical",
+      "policy": "DIRECT",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Proxy_Rule",
+      "file": "ruleset/Proxy_Rule.yaml",
+      "behavior": "domain",
+      "policy": "PROXY",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Proxy_Rule_IP",
+      "file": "ruleset/Proxy_Rule_IP.yaml",
+      "behavior": "ipcidr",
+      "policy": "PROXY",
+      "targets": ["flclash", "loon"]
+    },
+    {
+      "name": "Proxy_Rule_KW",
+      "file": "ruleset/Proxy_Rule_KW.yaml",
+      "behavior": "classical",
+      "policy": "PROXY",
+      "targets": ["flclash", "loon"]
+    }
+  ],
+  "guardRules": [
+    "GEOIP,LAN,DIRECT,no-resolve",
+    "GEOIP,private,DIRECT,no-resolve",
+    "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+    "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+    "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+    "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+    "IP-CIDR,100.66.1.0/24,DIRECT,no-resolve",
+    "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+    "IP-CIDR6,::1/128,DIRECT,no-resolve",
+    "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
+    "IP-CIDR6,fe80::/10,DIRECT,no-resolve"
+  ],
+  "tailRules": ["GEOIP,CN,DIRECT"],
+  "fakeIpFilterExtra": [
+    "+.lan",
+    "+.local",
+    "+.localdomain",
+    "+.home.arpa",
+    "+.msftconnecttest.com",
+    "+.msftncsi.com",
+    "localhost.ptlogin2.qq.com"
+  ],
+  "tunExcludeExtra": ["100.64.0.0/10"],
+  "policyMap": {
+    "flclash": { "PROXY": "节点选择", "DIRECT": "DIRECT", "REJECT": "REJECT" },
+    "loon": { "PROXY": "PROXY", "DIRECT": "DIRECT", "REJECT": "REJECT" }
+  }
+}
