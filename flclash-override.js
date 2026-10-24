@@ -60,6 +60,9 @@ var BUILTIN_HEAD = [
   "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
   "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
   "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+  // 节点小宝 / Tailscale 组网段（CGNAT）。100.66.1.0/24 本来已含于
+  // 100.64.0.0/10，单独列一条是为了以后改大段时不会误伤。
+  "IP-CIDR,100.66.1.0/24,DIRECT,no-resolve",
   "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
   "IP-CIDR6,::1/128,DIRECT,no-resolve",
   "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
@@ -83,6 +86,16 @@ var FAKE_IP_FILTER_EXTRA = [
   "+.msftconnecttest.com",
   "+.msftncsi.com",
   "localhost.ptlogin2.qq.com"
+];
+
+// ── TUN 路由排除 ──
+// 这一步比规则层的 DIRECT 更关键。FlClash 的 TUN 默认只排除 10/8、172.16/12、
+// 192.168/16 这些标准私网，不包含 100.64.0.0/10（CGNAT）。
+// 后果：节点小宝 / Tailscale 的 100.66.x.x 流量会先被 TUN 抓走，即使规则写了
+// DIRECT，也是从物理网卡往外发——而那个地址只有组网虚拟网卡能到，必然失败。
+// 必须在 TUN 路由层就排除，让这些流量根本不进 TUN。
+var TUN_EXCLUDE_EXTRA = [
+  "100.64.0.0/10"
 ];
 
 // ======================== provider 表 ========================
@@ -255,6 +268,17 @@ function main(config) {
       if (fif.indexOf(FAKE_IP_FILTER_EXTRA[fi]) === -1) fif.push(FAKE_IP_FILTER_EXTRA[fi]);
     }
     config.dns["fake-ip-filter"] = fif;
+  }
+
+  // 从 TUN 路由中排除组网段（节点小宝 / Tailscale），否则流量进 TUN 后出不去
+  if (config.tun && typeof config.tun === "object") {
+    var rex = config.tun["route-exclude-address"];
+    if (!rex || !rex.length) rex = [];
+    var ti;
+    for (ti = 0; ti < TUN_EXCLUDE_EXTRA.length; ti++) {
+      if (rex.indexOf(TUN_EXCLUDE_EXTRA[ti]) === -1) rex.push(TUN_EXCLUDE_EXTRA[ti]);
+    }
+    config.tun["route-exclude-address"] = rex;
   }
 
   // 拆分原规则：guard / 普通 / MATCH
