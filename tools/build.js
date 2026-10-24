@@ -245,11 +245,30 @@ function main(config) {
 // ══════════════════════════════════════════════
 function buildOpenClash(sets) {
   const L = [];
+
+  // ── 模块元信息：添加模块时 OpenClash 会读取这些注释自动回填表单 ──
+  // 规范见官方 default：luci-app-openclash/root/etc/openclash/overwrite/default
+  L.push('#!NAME=规则中心 · OpenClash');
+  L.push('#!DESC=广告拦截 + 内网/组网直连 + 国内直连兜底。规则文件由 CDN 下发，自动跟随上游更新。');
+  L.push('#!CONFIG=all');
+  L.push('#!CRON=0 4 * * *');
+  L.push('');
+
+  // ── [General]：只覆盖必要的几项，其余保持 Web UI 里的设置 ──
+  L.push('[General]');
+  L.push('# 显式指定 WAN 区域名，修复「设置仅允许内网功能失败，无法获取 IPv4 的 WAN 接口名称」');
+  L.push('INTRANET_ALLOWED_WAN_NAME = wan');
+  L.push('# 开启域名嗅探。fake-ip 下域名会解析成 198.18.x.x，没有嗅探时 GEOIP 类规则对网页访问无效');
+  L.push('ENABLE_META_SNIFFER = 1');
+  L.push('# 本模块内容更新（CRON 拉到新版）后自动重启插件，否则新规则不会加载');
+  L.push('RESTART = true');
+  L.push('');
+
   L.push('[YAML]');
   L.push('# ============================================================');
-  L.push('# OpenClash 覆写模块 · 自动生成，请勿手改');
-  L.push('# 源：sources.json → tools/build.js');
-  L.push('# 与 FlClash 端共用同一套规则文件和同一条优先级');
+  L.push('# 规则中心 · OpenClash 端');
+  L.push('# 自动生成，请勿手改。改 sources.json 后由 CI 重建。');
+  L.push('# 与 FlClash / Loon 端各自独立：这里用的是 OpenClash 的策略组与插件能力。');
   L.push('# ============================================================');
   L.push('');
 

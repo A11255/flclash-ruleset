@@ -1,14 +1,22 @@
 # flclash-ruleset · 规则中心
 
-一处维护，多端下发。`sources.json` 是唯一手工维护的文件，CI 自动把上游规则转成 mihomo 格式给 FlClash 用，Loon 端直接引用上游原始链接。
+一处维护，多端下发。`sources.json` 是唯一手工维护的文件。
+
+**三端各自独立**，不是强行同源：规则数据来自同一份清单，但每端用自己平台的能力和格式。
+
+| 端 | 格式 | 走代理用什么 | 怎么更新 |
+|---|---|---|---|
+| **FlClash**（Win / Android） | JS 覆写脚本 | 策略组 `节点选择` | 重启 VPN 时重新拉取 |
+| **Loon**（iOS） | `.conf` 的 `[Rule]` 段 | 策略组 `节点选择` | 手动或定时更新配置 |
+| **OpenClash**（OpenWrt） | INI 三段的覆写模块 | 策略组 `🚀 手动选择` | `#!CRON` 每天 4 点自动拉取并重启 |
 
 ```
 sources.json
     │
-    ├─ CI 拉取上游规则 ─→ 分类 ─→ 跨表去重 ─→ dist/mihomo/*.yaml ─→ FlClash
-    │                     ├─ 域名    → behavior: domain
-    │                     ├─ IP 段   → behavior: ipcidr
-    │                     └─ 关键词  → behavior: classical
+    ├─ CI 拉取上游规则 ─→ 分类 ─→ 跨表去重 ─→ dist/mihomo/*.yaml
+    │                     ├─ 域名    → behavior: domain        → FlClash / OpenClash
+    │                     ├─ IP 段   → behavior: ipcidr        → FlClash / OpenClash
+    │                     └─ 关键词  → behavior: classical     → FlClash / OpenClash
     │
     └─ Loon 端直接用上游原始链接（本来就是 Loon/Surge 格式，不需要转）
 ```
@@ -27,7 +35,13 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/loon/loon.conf
 ```
 
-两个地址里都没有 commit SHA，只有不变的分支名 `main`。上游规则每天更新、CI 每次重建，**这两个地址都不会变**，你不需要改任何设备。
+**OpenClash** — 覆写模块 → 添加 → 订阅链接：
+
+```
+https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/openclash/module.conf
+```
+
+三个地址里都没有 commit SHA，只有不变的分支名 `main`。上游规则每天更新、CI 每次重建，**这三个地址都不会变**，你不需要改任何设备。
 
 ### 为什么用 gh-proxy.com 而不是 jsDelivr
 
@@ -80,11 +94,31 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 1. OpenClash → **运行状态** 页顶部，点「**覆写模块**」按钮（和启动/停止、重启并排的那个图标）
 2. 左下角「**+ 添加新模块**」→ 第一步选「**订阅链接**」→ 粘贴上面的地址 → 下一步
-3. 填模块名 → **匹配配置文件选 `all`** → 添加
+3. 模块名、匹配配置（`all`）会从文件头的 `#!` 元信息**自动回填**，确认后直接添加
 4. **打开这个模块的开关**（新建模块默认是关的）
 5. 回运行状态页点「**重启**」
 
 > 改内容、切开关、新建模块之后都必须**重启插件**，不是 `reload`。覆写模块只在 `start_service` 里解析。
+
+### 模块由三段组成
+
+按官方 `luci-app-openclash/root/etc/openclash/overwrite/default` 的规范写的：
+
+| 段 | 作用 | 本模块内容 |
+|---|---|---|
+| `#!` 元信息 | 添加模块时自动回填表单 | `NAME` / `DESC` / `CONFIG=all` / `CRON=0 4 * * *` |
+| `[General]` | 覆盖插件设置（Web UI 里那些开关） | 3 项，见下 |
+| `[YAML]` | 用操作符合并运行配置 | 规则集 + 规则 + fake-ip-filter + TUN 排除 |
+
+`#!CRON=0 4 * * *` 让插件**每天凌晨 4 点重新下载本模块**，配合 `RESTART = true` 自动重启生效——这是 OpenClash 端的「跟随更新」，和 FlClash 的重启拉取是两条独立路径。
+
+`[General]` 只覆盖 3 项，其余全部保持你在 Web UI 里的设置：
+
+| 项 | 值 | 为什么 |
+|---|---|---|
+| `INTRANET_ALLOWED_WAN_NAME` | `wan` | 修掉日志里的「设置仅允许内网功能失败，无法获取 IPv4 的 WAN 接口名称」。你的 WAN 区域名如果叫别的，改这里 |
+| `ENABLE_META_SNIFFER` | `1` | 开启域名嗅探。纯 IP 连接也能提取 SNI/Host，让域名规则命中 |
+| `RESTART` | `true` | 模块更新后自动重启插件，否则新规则不加载 |
 
 ### 策略组名：只有一个地方要配置
 
