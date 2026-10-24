@@ -8,7 +8,7 @@
 |---|---|---|---|
 | **FlClash**（Win / Android） | JS 覆写脚本 | 策略组 `节点选择` | 重启 VPN 时重新拉取 |
 | **Loon**（iOS） | `.conf` 的 `[Rule]` 段 | 策略组 `节点选择` | 手动或定时更新配置 |
-| **OpenClash**（OpenWrt） | INI 三段的覆写模块 | 订阅自带的策略组 | `#!CRON` 每天 4 点自动拉取并重启 |
+| **OpenClash**（OpenWrt） | 纯 YAML 覆写模块（零 provider） | 订阅自带的策略组 | 手动设更新时间，或重启时重新拉取 |
 
 ```
 sources.json
@@ -38,7 +38,7 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 **OpenClash** — 覆写模块 → 添加 → 订阅链接：
 
 ```
-https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/openclash/module.conf
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/openclash/module.conf
 ```
 
 三个地址里都没有 commit SHA，只有不变的分支名 `main`。上游规则每天更新、CI 每次重建，**这三个地址都不会变**，你不需要改任何设备。
@@ -84,41 +84,43 @@ https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/flclash-overr
 
 OpenClash 内核同样是 mihomo，但**它不认 FlClash 的 JS 覆写脚本**——`main(config)` 是 FlClash 应用层自己实现的功能，mihomo 内核没有这个东西。
 
-OpenClash 对应的是「**覆写模块**」，格式是 INI 三段（`[General]` / `[Overwrite]` / `[YAML]`），靠 `[YAML]` 段的操作符把内容合并进运行配置。生成器已经专门为它产出：
+OpenClash 对应的是「**覆写模块**」。本模块是**纯 YAML、零 rule-provider** 形态：
 
 ```
-https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/openclash/module.conf
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/openclash/module.conf
 ```
+
+> **为什么 OpenClash 用 jsDelivr，而 FlClash 用 gh-proxy？**
+> `dist/openclash/` 是新路径，实测三个 jsDelivr 镜像（cdn / fastly / gcore）都实时同步、MD5 一致；而 `dist/flclash-override.js` 那个老路径被 jsDelivr 缓存粘住了，purge 也清不掉。另外你的路由器日志显示 `cdn.jsdelivr.net` 可直连、`gh-proxy.com` 曾 `i/o timeout`。
 
 ### 挂载步骤
 
 1. OpenClash → **运行状态** 页顶部，点「**覆写模块**」按钮（和启动/停止、重启并排的那个图标）
 2. 左下角「**+ 添加新模块**」→ 第一步选「**订阅链接**」→ 粘贴上面的地址 → 下一步
-3. 模块名、匹配配置（`all`）会从文件头的 `#!` 元信息**自动回填**，确认后直接添加
+3. 填模块名，**匹配配置文件手动选 `all`**
 4. **打开这个模块的开关**（新建模块默认是关的）
-5. 回运行状态页点「**重启**」
+5. 回运行状态页点「**重启**」，然后等 60 秒
 
 > 改内容、切开关、新建模块之后都必须**重启插件**，不是 `reload`。覆写模块只在 `start_service` 里解析。
 
-### 模块由三段组成
+### 模块形态：纯 YAML，零 provider
 
-按官方 `luci-app-openclash/root/etc/openclash/overwrite/default` 的规范写的：
+整个文件只有一个 `[YAML]` 段，**所有规则直接写在 `+rules:` 里，不下载任何外部文件**：
 
-| 段 | 作用 | 本模块内容 |
-|---|---|---|
-| `#!` 元信息 | 添加模块时自动回填表单 | `NAME` / `DESC` / `CONFIG=all` / `CRON=0 4 * * *` |
-| `[General]` | 覆盖插件设置（Web UI 里那些开关） | 3 项，见下 |
-| `[YAML]` | 用操作符合并运行配置 | 规则集 + 规则 + fake-ip-filter + TUN 排除 |
+| 组成 | 条数 |
+|---|---|
+| 广告域名 `DOMAIN-SUFFIX` | 16968 |
+| 广告关键词 `DOMAIN-KEYWORD` | 13 |
+| 广告 IP（v4 用 `IP-CIDR`，v6 用 `IP-CIDR6`） | 17 |
+| 内网 / 组网兜底 | 12 |
+| Apple 推送 / FCM / 系统更新直连 | 56 |
+| **合计** | **17045**（文件约 774 KB） |
 
-`#!CRON=0 4 * * *` 让插件**每天凌晨 4 点重新下载本模块**，配合 `RESTART = true` 自动重启生效——这是 OpenClash 端的「跟随更新」，和 FlClash 的重启拉取是两条独立路径。
+广告内容来自 `AdBlock` + `adrules` + `rejectAd` + `Adblock4limbo` 四张表**全部条目**，已做跨表去重。
 
-`[General]` 只覆盖 3 项，其余全部保持你在 Web UI 里的设置：
+**为什么不用 `rule-providers`**：带 provider 的版本在你机器上稳定卡在启动「第五步」，内核 0 个 provider 活动。见下节实测记录。
 
-| 项 | 值 | 为什么 |
-|---|---|---|
-| `INTRANET_ALLOWED_WAN_NAME` | `wan` | 修掉日志里的「设置仅允许内网功能失败，无法获取 IPv4 的 WAN 接口名称」。你的 WAN 区域名如果叫别的，改这里 |
-| `ENABLE_META_SNIFFER` | `1` | 开启域名嗅探。纯 IP 连接也能提取 SNI/Host，让域名规则命中 |
-| `RESTART` | `true` | 模块更新后自动重启插件，否则新规则不加载 |
+**注意**：内联到 `rules` 里必须区分 `IP-CIDR` 和 `IP-CIDR6`。provider 版靠 `behavior: ipcidr` 自动识别 v4/v6，内联时不会——写错会让内核直接拒绝解析。
 
 ### 不需要配置任何策略组名
 
@@ -126,43 +128,29 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 能做到这一点是因为 OpenClash 端**只做广告拦截**，不再重复下发「国内直连」和「走代理」两类规则——那两件事你订阅自带的 `GeoSite(cn)` / `Custom_Direct_Domain` / `Custom_Proxy_Domain` 已经在做了。
 
-### 为什么 OpenClash 端只有 1.7 万条
+### 为什么弃用 rule-provider（完整排查记录）
 
-**先说结论：不是性能问题。** N1（S905D + 2GB RAM）跑 48 万条完全够，15:52 那次全量启动是成功的——30 个 provider 全部加载，`www.baidu.com` 正常命中 `Direct_Rule_KW`。
+带 `rule-providers` 的版本在你机器上从来没起来过（除了一次）。四次失败表现完全一致：**卡在启动「第五步」，之后零日志，内核 0 个 provider 活动**。
 
-精简是为了**排除故障变量**，实测记录如下：
-
-| 启动时间 | 模块内容 | provider 启动数 | 结果 |
+| 时间 | 模块内容 | provider 启动数 | 结果 |
 |---|---|---|---|
-| 15:52 | 18 条规则 / 21 provider | **30 个** | ✅ 正常，规则生效 |
-| 16:13 | 21 条 + `[General]` | 未知（日志截断） | 停在第五步 |
-| 16:17 | 21 条 + `[General]` | **0 个** | ❌ 内核未启动 |
-| 16:52 | 无模块 | 9 个（订阅自带） | ✅ 12 秒起来 |
+| 15:52 | 18 条规则 / 21 provider | **30 个** | ✅ 唯一一次成功 |
+| 16:13 | 21 条 + `[General]` | 未知（日志截断） | ❌ 卡第五步 |
+| 16:17 | 21 条 + `[General]` | **0 个** | ❌ |
+| 17:17 | 12 provider + `[General]` | **0 个** | ❌ |
+| 17:44 | 12 provider，纯 YAML | **0 个** | ❌ |
+| 16:52 / 17:10 | **无模块** | 9 个（订阅自带） | ✅ 12 秒起来 |
 
-16:17 那次**一个 provider 都没启动、零条内核活动**，说明内核在初始化之前就失败退出了——这是配置解析层面的问题，不是负载问题。
+逐个排除的假设：
 
-15:52 和 16:17 之间新增了两个变量：
+| 假设 | 验证结果 |
+|---|---|
+| 内存不足 | ❌ N1 有 2GB，15:52 全量成功过 |
+| 策略组 `🚀 手动选择` 不存在 | ❌ 订阅自己的 `Custom_Proxy_Domain` 在用它，匹配正常 |
+| `ENABLE_META_SNIFFER = 1` | ❌ 去掉后照样卡 |
+| `[General]` 段 | ❌ 去掉后照样卡 |
 
-1. `[General] ENABLE_META_SNIFFER = 1`
-2. `Proxy_Rule` 三条规则指向 `🚀 手动选择`
-
-**精简版去掉了第 2 个变量**（不再有 `Proxy_Rule`），所以「策略组名不存在导致配置被拒」这个风险已经归零。第 1 个变量暂时保留。
-
-如果精简版仍然启动失败，下一步就是把 `ENABLE_META_SNIFFER` 也去掉，最小化到只留 `INTRANET_ALLOWED_WAN_NAME`。
-
-### 精简版砍了什么
-
-`sources.json` 里三个大标了 `"openclash": false`：
-
-| 源 | 条数 | 为什么不进 OpenClash |
-|---|---|---|
-| `Reject_Rule` | 304969 | 减少首次下载量（7.4 MB），并把变量控制到最小 |
-| `Direct_Rule` | 110580 | 订阅自带 `GeoSite(cn)`，日志实测 `www.baidu.com → GeoSite(cn) → 🎯 全球直连` |
-| `Proxy_Rule` | 35083 | 订阅自带 `Custom_Proxy_Domain`，且它需要引用策略组名 |
-
-**待基线验证通过后**，如果想让路由器也用 30 万条广告表，把 `Reject_Rule` 那行的 `"openclash": false` 删掉重新构建即可——N1 的内存扛得住，代价是首次启动多下载 7.4 MB。
-
-**这三行只影响 OpenClash。** FlClash 和 Loon 端仍然是全量。
+**唯一共同点就是 `rule-providers` 本身**，所以改成零 provider 的内联形态。这版把所有外部依赖（下载、文件路径、provider 解析）全部去掉，只剩纯文本规则。
 
 ### 一个需要注意的优先级副作用
 
@@ -185,11 +173,11 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 重启后看这三处：
 
-1. **插件日志**（运行状态页 → 日志 → 插件日志）没有 `policy not found`、没有 `parse error`
-2. **内核日志**里出现形如 `match RuleSet(Reject_Rule)` 的行 —— 说明我们的规则正在被匹配
-3. 打开一个广告域名，内核日志显示 `match RuleSet(Reject_Rule) using REJECT`
+1. **插件日志**（运行状态页 → 日志 → 插件日志）没有 `parse error`，并且出现「启动成功」
+2. **内核日志**里出现 `match RuleSet(...)` 或 `match Match` 的行，说明内核在正常处理规则
+3. 打开一个广告域名（比如 `doubleclick.net`），内核日志应显示命中我们的规则并 `using REJECT`
 
-如果内核日志里连 `Reject_Rule` 字样都没有，说明模块没加载：检查模块开关是否打开、`匹配配置文件` 是否填了 `all`、以及**是否真的重启了插件**（`reload` 不算）。
+内联版没有 provider 名可查，判断规则是否加载要看 `config.yaml` 的 `rules` 段——在「配置文件」页面能看到，搜 `DOMAIN-SUFFIX` 应该有约 1.7 万条。
 
 ### 模块做了什么
 
@@ -197,30 +185,30 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 | 写法 | 语义 | 用途 |
 |---|---|---|
-| `rule-providers:` | 哈希递归合并 | 追加 21 个规则集，不动订阅自带的部分 |
-| `+rules:` | **数组前置插入** | 把 24 条规则插到订阅规则**前面**，保证优先匹配 |
-| `dns.fake-ip-filter+:` | 数组末尾追加 | 内网域名不走 fake-ip |
-| `tun.route-exclude-address+:` | 数组末尾追加 | 组网网段不进 TUN |
+| `+rules:` | **数组前置插入** | 把 17045 条规则插到订阅规则**前面**，保证优先匹配 |
 
-生效的 24 条 = 12 条内网兜底 + 12 条 RULE-SET（1 个关键词表 + 5 个域名表 + 4 个 IP 表），合计约 1.7 万条，12 个 provider。
+就这一个操作符。模块里没有 `rule-providers`、没有 `dns` 段、没有 `tun` 段——把变量压到最少，只保留必要的那一项。
 
-生成器自带自检：每条 `RULE-SET` 引用的 provider 必须在同一文件里定义过，否则构建直接失败。
+内网/组网直连靠规则本身解决（`GEOIP,LAN` / `GEOIP,private` / 8 条私有网段），不依赖 `tun.route-exclude-address`。如果你的节点小宝（100.66.1.x）在路由器上还需要 TUN 层排除，那是 FlClash 那边的问题，路由器走的是 Redir/TProxy 模式，规则层 `IP-CIDR,100.64.0.0/10,DIRECT` 已经够了。
 
 ### 和 FlClash 版的差别
 
 | 项 | FlClash | OpenClash |
 |---|---|---|
-| 规则量 | 48 万条 / 21 provider | **1.7 万条 / 12 provider** |
-| 广告拦截 | 5 张表（含 30 万条 Reject_Rule） | 4 张小表（不含 Reject_Rule） |
+| 形态 | JS 覆写脚本 + 21 个 rule-provider | **纯 YAML + 零 provider** |
+| 规则量 | 48 万条 | **17045 条** |
+| 广告来源 | 5 张表（含 30 万条 `Reject_Rule`） | 4 张表（不含 `Reject_Rule`） |
 | 国内直连 | `Direct_Rule` 11 万条 | 订阅自带 `GeoSite(cn)` |
 | 走代理 | `Proxy_Rule` 3.5 万条 → `节点选择` | 订阅自带 `Custom_Proxy_Domain` |
 | `GEOIP,CN,DIRECT` | 有（末尾兜底） | **无** |
 
-**为什么 OpenClash 不要 `GEOIP,CN,DIRECT`**：FlClash 里它是末尾兜底，但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。你订阅自带 `GeoSite(cn)`，所以省掉。
+**为什么 OpenClash 不含 `Reject_Rule` 那 30 万条**：内联规则会全部展开成 `config.yaml` 的 `rules` 数组，内核要逐条解析成规则对象（不像 provider 那样走预编译的 payload）。30 万条内联会让配置文件膨胀到 10 MB 以上、解析时间从毫秒级变成分钟级。4 张小表合计 1.7 万条已覆盖主流广告。
+
+**为什么不要 `GEOIP,CN,DIRECT`**：FlClash 里它是末尾兜底，但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。你订阅自带 `GeoSite(cn)`，所以省掉。
 
 ### 规则文件由谁下载
 
-路由器的 mihomo 内核**直接出网**拉规则文件，不走代理，所以模块里 12 个 provider 的 `url` 指向 `cdn.jsdelivr.net`（国内可直连），而不是 gh-proxy。这和 FlClash 端的逻辑一致：入口文件走代理可达的地址，规则文件走内核可直连的地址。
+**不用下载了。** 内联版没有任何 `rule-providers`，所有规则都在 `module.conf` 这一个文件里，由 OpenClash 插件自身拉取（走系统网络，不经代理）。`sources.json` 里 `openclashInline: true` 控制这个形态，改成 `false` 就回到 provider 版。
 
 ## 规则源
 
@@ -252,7 +240,7 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 |---|---|---|---|
 | FlClash | 482072 | 21 | 35 |
 | Loon | — | 16 个上游直链 | 16 条 RULE-SET |
-| **OpenClash** | **约 1.7 万** | **12** | **24** |
+| **OpenClash** | **17045** | **0（内联）** | **1 个 `+rules` 块** |
 
 标注「仅 Loon」的 7 个表在 `sources.json` 里写了 `"flclash": false`。生成器**不会去下载它们**，只把链接写进 `loon.conf`。
 
