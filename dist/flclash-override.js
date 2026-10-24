@@ -194,7 +194,6 @@ var PROVIDERS = {
 
 var RULES = [
 "GEOIP,LAN,DIRECT,no-resolve",
-"GEOIP,private,DIRECT,no-resolve",
 "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
 "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
 "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
