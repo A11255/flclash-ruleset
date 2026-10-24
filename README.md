@@ -21,8 +21,8 @@ sources.json
 https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@0ddab17/dist/flclash-override.js
 ```
 
-> ⚠️ **这里必须用 commit SHA，不能用 `@main`。** jsDelivr 对 `@main` 有 12 小时缓存，purge 接口实测不可靠（返回 200 但内容不变）。SHA 每次更新我会告诉你新的。
-> 不急的话，等 12 小时后把 `@0ddab17` 换回 `@main` 也能用。
+> ⚠️ **`@main` 和固定 SHA 的区别只在更新延迟。** jsDelivr 对 `@main` 有最长 12 小时缓存，`purge` 接口实测不可靠（返回 200 但内容不变）。
+> 不着急就用 `@main`，改完等半天自动生效；要立刻拿到最新版就用固定 SHA（每次更新我会给新的 SHA）。
 
 **Loon（iOS）** — 配置从 URL 导入：
 
