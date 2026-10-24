@@ -46,6 +46,45 @@ var G_PROXY = "节点选择";
 var G_DIRECT = "DIRECT";
 var G_REJECT = "REJECT";
 
+// ── 内置兜底规则 ──
+// 很多机场订阅只给节点、不带任何规则。这种情况下必须自己补，
+// 否则：国内流量全落到 MATCH 走代理；内网设备会被 Reject_Rule_IP 里
+// 的 10.x/192.168.x 段误杀。
+// 只用 mihomo 内置的 GEOIP code（LAN / private / CN），不依赖 geosite 分类，
+// 避免分类不存在导致整份配置加载失败。
+var BUILTIN_HEAD = [
+  "GEOIP,LAN,DIRECT,no-resolve",
+  "GEOIP,private,DIRECT,no-resolve",
+  "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+  "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+  "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+  "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+  "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+  "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+  "IP-CIDR6,::1/128,DIRECT,no-resolve",
+  "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
+  "IP-CIDR6,fe80::/10,DIRECT,no-resolve"
+];
+
+// fake-ip 模式下 GEOIP,CN 对「域名访问」无效（拿到的是 198.18.x 假 IP），
+// 但对「直连真实 IP」的连接有效（游戏、P2P、IP 直连应用），所以放最后兜底。
+// 域名层面的国内直连由 Direct_Rule（11 万条）负责。
+var BUILTIN_TAIL = [
+  "GEOIP,CN,DIRECT"
+];
+
+// fake-ip 模式下，地址栏输入内网主机名会拿到假 IP 导致连不上，
+// 这里补上常见的内网域名后缀，强制走真实 DNS 解析。
+var FAKE_IP_FILTER_EXTRA = [
+  "+.lan",
+  "+.local",
+  "+.localdomain",
+  "+.home.arpa",
+  "+.msftconnecttest.com",
+  "+.msftncsi.com",
+  "localhost.ptlogin2.qq.com"
+];
+
 // ======================== provider 表 ========================
 // behavior 必须与文件内容匹配，错了会加载失败：
 //   domain    → payload 是纯域名          (AdBlock / Reject_Rule / Proxy_Rule ...)
@@ -208,6 +247,16 @@ function main(config) {
   }
   config["rule-providers"] = existing;
 
+  // 补 fake-ip 的内网域名白名单，否则内网主机名会被解析成 198.18.x 假 IP
+  if (config.dns && typeof config.dns === "object") {
+    var fif = config.dns["fake-ip-filter"] || [];
+    var fi;
+    for (fi = 0; fi < FAKE_IP_FILTER_EXTRA.length; fi++) {
+      if (fif.indexOf(FAKE_IP_FILTER_EXTRA[fi]) === -1) fif.push(FAKE_IP_FILTER_EXTRA[fi]);
+    }
+    config.dns["fake-ip-filter"] = fif;
+  }
+
   // 拆分原规则：guard / 普通 / MATCH
   var original = (config.rules || []).slice();
   var guards = [];
@@ -239,9 +288,10 @@ function main(config) {
 
   // 最终拼装：guard → 我的规则集 → 订阅原有规则 → MATCH
   var merged = [];
-  merged = merged.concat(dedupe(guards));
+  merged = merged.concat(dedupe(BUILTIN_HEAD.concat(guards)));
   merged = merged.concat(mine);
   merged = merged.concat(dedupe(middles));
+  merged = merged.concat(BUILTIN_TAIL);
   merged.push(finalRule);
 
   config.rules = merged;
