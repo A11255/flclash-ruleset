@@ -94,6 +94,23 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 「走代理」那部分（`Proxy_Rule` 三个表）默认注释掉了，原因见下。所以这个模块加进来就能用，不用改任何东西。
 
+### 一个需要注意的优先级副作用
+
+`+rules` 是插到数组**开头**，所以我们的规则会排在你自己模板规则的前面（你的日志里是 `Custom_Direct_Domain` / `Custom_Proxy_Domain` / `Custom_Port_Direct` / `GeoSite(github)` / `Match`）。
+
+这意味着：
+
+- 广告表 `REJECT` 优先 → 这是想要的效果
+- **`Direct_Rule`（11 万条）会抢在 `Custom_Proxy_Domain` 之前** → 某个域名如果你模板里特意设成走代理，但它同时存在于 `Direct_Rule` 里，就会被改成直连
+
+如果遇到「某个网站本该走代理却直连了」，把模块里这三行注释掉即可（只保留广告拦截，直连交回你自己的模板）：
+
+```yaml
+#  - 'RULE-SET,Direct_Rule,DIRECT'
+#  - 'RULE-SET,Direct_Rule_IP,DIRECT,no-resolve'
+#  - 'RULE-SET,Direct_Rule_KW,DIRECT'
+```
+
 ### 怎么确认生效
 
 重启后看这三处：
