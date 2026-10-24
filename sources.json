@@ -5,11 +5,13 @@
   "cdnBase": "https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main",
 
   "_upstreamComment": "数组顺序即规则优先级：先拦截，再系统服务直连，再国内直连，最后代理。policy 可选 REJECT / DIRECT / PROXY。loon:false 表示该源格式不适合 Loon 的 RULE-SET（不进 loon.conf）。",
+  "_openclashComment": "openclash:false = 该源不进 OpenClash 模块。三个大表全部排除，原因：实测路由器加载 48 万条规则会在第五步卡死 35 分钟起不来。OpenClash 端只留广告小表 + 推送直连，国内直连/代理交给订阅自带的 GeoSite(cn) 与 Custom_* 规则。",
   "upstream": [
     {
       "name": "Reject_Rule",
       "url": "https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Reject_Rule/Reject_Rule.rule",
-      "policy": "REJECT"
+      "policy": "REJECT",
+      "openclash": false
     },
     {
       "name": "AdBlock",
@@ -93,12 +95,14 @@
     {
       "name": "Direct_Rule",
       "url": "https://github.com/Code-Dramatist/Rule_Actions/raw/refs/heads/main/Direct_Rule/Direct_Rule.rule",
-      "policy": "DIRECT"
+      "policy": "DIRECT",
+      "openclash": false
     },
     {
       "name": "Proxy_Rule",
       "url": "https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Proxy_Rule/Proxy_Rule.rule",
-      "policy": "PROXY"
+      "policy": "PROXY",
+      "openclash": false
     }
   ],
 

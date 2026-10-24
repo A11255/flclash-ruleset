@@ -273,9 +273,11 @@ function buildOpenClash(sets) {
   L.push('');
 
   // ── rule-providers：哈希递归合并，不覆盖订阅自带的部分 ──
+  // openclash:false 的源整体跳过（大表由订阅自带的 GeoSite(cn) / Custom_* 接管）
   L.push('rule-providers:');
   for (const s of sets) {
     if (!s.k) continue;
+    if (s.u.openclash === false) continue;
     const prefix = s.u.name;
     const ents = [];
     if (s.k.kw.size) ents.push({ n: prefix + '_KW', b: 'classical', f: prefix + '_KW.yaml' });
@@ -299,9 +301,15 @@ function buildOpenClash(sets) {
   // 整份配置拒绝加载，所以映射缺失时自动降级为「注释掉」而不是直接写进配置。
   const ocProxy = pm('openclash', 'PROXY');
   const proxyUsable = !!ocProxy && ocProxy !== 'PROXY' && !ocProxy.includes('你的代理策略组');
+  // 本端是否还有需要策略组的源（大表全部 openclash:false 后通常没有了）
+  const ocHasProxySrc = sets.some(s => s.k && s.u.openclash !== false && s.u.policy === 'PROXY');
 
   L.push('# +rules = 插入到数组开头，所以这里的顺序就是优先级');
-  if (proxyUsable) {
+  if (!ocHasProxySrc) {
+    L.push('# 本模块只做三件事：广告拦截 + 内网/组网直连 + 系统服务(Apple/FCM)直连。');
+    L.push('# 国内域名直连与走代理交给订阅自带的 GeoSite(cn) / Custom_Direct_Domain / Custom_Proxy_Domain，');
+    L.push('# 不再重复下发 11 万条域名表——那会让路由器在启动第五步卡死（实测 35 分钟起不来）。');
+  } else if (proxyUsable) {
     L.push('# DIRECT / REJECT 为内建出站；PROXY 映射到策略组「' + ocProxy + '」');
     L.push('# 若该组名在你的配置里不存在，改为 sources.json → policyMap.openclash.PROXY，重新构建');
   } else {
@@ -317,6 +325,7 @@ function buildOpenClash(sets) {
   for (const cls of ['kw', 'domain', 'ip']) {
     for (const s of sets) {
       if (!s.k || !s.k[cls].size) continue;
+      if (s.u.openclash === false) continue;
       const p = pm('openclash', s.u.policy);
       const suffix = cls === 'ip' ? ',no-resolve' : '';
       const nm = s.u.name + (cls === 'kw' ? '_KW' : cls === 'ip' ? '_IP' : '');
