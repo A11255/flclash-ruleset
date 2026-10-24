@@ -28,6 +28,8 @@ jobs:
         run: |
           node --check dist/flclash-override.js
           test -s dist/loon/loon.conf
+          test -s dist/openclash/module.conf
+          head -1 dist/openclash/module.conf | grep -qx '\[YAML\]'
           test -d dist/mihomo
           echo "provider 文件数: $(ls dist/mihomo | wc -l)"
 

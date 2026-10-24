@@ -66,6 +66,59 @@ https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/flclash-overr
 
 两者路径完全一致，前者只是替你在国内做中转。
 
+## OpenClash（OpenWrt 路由器）
+
+OpenClash 内核同样是 mihomo，但**它不认 FlClash 的 JS 覆写脚本**——`main(config)` 是 FlClash 应用层自己实现的功能，mihomo 内核没有这个东西。
+
+OpenClash 对应的是「**覆写模块**」，格式是 INI 三段（`[General]` / `[Overwrite]` / `[YAML]`），靠 `[YAML]` 段的操作符把内容合并进运行配置。生成器已经专门为它产出：
+
+```
+https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/openclash/module.conf
+```
+
+### 挂载步骤
+
+1. OpenClash → **运行状态** 页顶部，点「**覆写模块**」按钮（和启动/停止、重启并排的那个图标）
+2. 左下角「**+ 添加新模块**」→ 第一步选「**订阅链接**」→ 粘贴上面的地址 → 下一步
+3. 填模块名 → **匹配配置文件选 `all`** → 添加
+4. **打开这个模块的开关**（新建模块默认是关的）
+5. 回运行状态页点「**重启**」
+
+> 改内容、切开关、新建模块之后都必须**重启插件**，不是 `reload`。覆写模块只在 `start_service` 里解析。
+
+### 启用前必须先改一个地方
+
+模块里规则用的策略组名是 `节点选择`（FlClash 那边的叫法）。**OpenClash 的策略组通常叫 `🚀 节点选择` 之类，名字对不上时内核会报 `policy not found`，配置直接加载失败。**
+
+改法：先添加模块但**别启用** → 选中它，在编辑器里把 `节点选择` 全部替换成你实际的组名（在「**策略组**」页面能看到）→ Save → 再打开开关 → 重启。
+
+### 模块做了什么
+
+`[YAML]` 段用的全是 OpenClash 覆写模块的操作符：
+
+| 写法 | 语义 | 用途 |
+|---|---|---|
+| `rule-providers:` | 哈希递归合并 | 追加 21 个规则集，不动订阅自带的部分 |
+| `+rules:` | **数组前置插入** | 把 33 条规则插到订阅规则**前面**，保证优先匹配 |
+| `dns.fake-ip-filter+:` | 数组末尾追加 | 内网域名不走 fake-ip |
+| `tun.route-exclude-address+:` | 数组末尾追加 | 组网网段不进 TUN |
+
+规则与 FlClash 端**完全同源**：同 21 个 provider、同 33 条前置规则（12 条内网兜底 + 21 条 RULE-SET）、同一优先级顺序。
+
+生成器自带自检：每条 `RULE-SET` 引用的 provider 必须在同一文件里定义过，否则构建直接失败。
+
+### 和 FlClash 版唯一的差别
+
+**OpenClash 模块里没有 `GEOIP,CN,DIRECT`。**
+
+FlClash 那个脚本里它是兜底规则、位置在最后。但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。OpenClash 一般自带国内直连兜底，所以这里省掉。
+
+如果确认你的配置里没有国内直连规则，可以在模块的 `+rules` 块末尾自己补一条。
+
+### 规则文件由谁下载
+
+路由器的 mihomo 内核**直接出网**拉规则文件，不走代理，所以模块里 21 个 provider 的 `url` 指向 `cdn.jsdelivr.net`（国内可直连），而不是 gh-proxy。这和 FlClash 端的逻辑一致：入口文件走代理可达的地址，规则文件走内核可直连的地址。
+
 ## 规则源
 
 按优先级排列（`sources.json` 里的数组顺序就是生效顺序）。
@@ -145,7 +198,8 @@ sources.json                ★ 唯一真源
 tools/build.js              生成器（零依赖，Node 18+）
 .github/workflows/build.yml CI
 dist/
-├── flclash-override.js     → FlClash 覆写脚本
+├── flclash-override.js     → FlClash 覆写脚本（JS）
+├── openclash/module.conf   → OpenClash 覆写模块（INI + [YAML]）
 ├── mihomo/                 → 21 个 rule-provider yaml
 └── loon/loon.conf          → Loon 配置
 _upstream/                  上游规则缓存（不入库）

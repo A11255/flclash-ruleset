@@ -236,6 +236,104 @@ function main(config) {
 }
 
 // ══════════════════════════════════════════════
+// OpenClash 覆写模块（INI 三段格式，只有 [YAML] 段）
+// OpenClash 不认 FlClash 的 JS 覆写：它用的是「覆写模块」，
+// 通过 [YAML] 段的操作符合并进运行配置。
+//   +rules:            → 数组前置插入（优先匹配）
+//   rule-providers:    → 哈希递归合并
+//   dns.fake-ip-filter+ / tun.route-exclude-address+ → 数组追加
+// ══════════════════════════════════════════════
+function buildOpenClash(sets) {
+  const L = [];
+  L.push('[YAML]');
+  L.push('# ============================================================');
+  L.push('# OpenClash 覆写模块 · 自动生成，请勿手改');
+  L.push('# 源：sources.json → tools/build.js');
+  L.push('# 与 FlClash 端共用同一套规则文件和同一条优先级');
+  L.push('# ============================================================');
+  L.push('');
+
+  // ── rule-providers：哈希递归合并，不覆盖订阅自带的部分 ──
+  L.push('rule-providers:');
+  for (const s of sets) {
+    if (!s.k) continue;
+    const prefix = s.u.name;
+    const ents = [];
+    if (s.k.kw.size) ents.push({ n: prefix + '_KW', b: 'classical', f: prefix + '_KW.yaml' });
+    if (s.k.domain.size) ents.push({ n: prefix, b: 'domain', f: prefix + '_Domain.yaml' });
+    if (s.k.ip.size) ents.push({ n: prefix + '_IP', b: 'ipcidr', f: prefix + '_IP.yaml' });
+    for (const e of ents) {
+      L.push('  ' + e.n + ':');
+      L.push('    type: http');
+      L.push('    behavior: ' + e.b);
+      L.push('    format: yaml');
+      L.push('    url: "' + CDN + '/dist/mihomo/' + e.f + '"');
+      L.push('    path: ./providers/' + e.f);
+      L.push('    interval: 86400');
+    }
+  }
+  L.push('');
+
+  // ── 规则：前置插入，保证在订阅规则之前、MATCH 之前生效 ──
+  L.push('# +rules = 插入到数组开头，所以这里的顺序就是优先级');
+  L.push('# ⚠ 「' + pm('flclash', 'PROXY') + '」是策略组名，必须和你 OpenClash 里真实存在的组名一致');
+  L.push('#   改法：服务 → OpenClash → 策略组 页面看到组名后，把本文件里的「' +
+    pm('flclash', 'PROXY') + '」全部替换掉');
+  L.push('#   名字不存在时内核会报 policy not found，配置加载失败');
+  L.push('+rules:');
+  for (const g of src.guardRules || []) L.push("  - '" + g + "'");
+  for (const s of sets) {
+    if (!s.k) continue;
+    const p = pm('flclash', s.u.policy);
+    if (s.k.kw.size) L.push("  - 'RULE-SET," + s.u.name + '_KW,' + p + "'");
+  }
+  for (const s of sets) {
+    if (!s.k) continue;
+    const p = pm('flclash', s.u.policy);
+    if (s.k.domain.size) L.push("  - 'RULE-SET," + s.u.name + ',' + p + "'");
+  }
+  for (const s of sets) {
+    if (!s.k) continue;
+    const p = pm('flclash', s.u.policy);
+    if (s.k.ip.size) L.push("  - 'RULE-SET," + s.u.name + '_IP,' + p + ',no-resolve' + "'");
+  }
+  L.push('');
+
+  // ── DNS：内网域名不进 fake-ip，否则浏览器输内网主机名会拿到假 IP ──
+  if ((src.fakeIpFilterExtra || []).length) {
+    L.push('dns:');
+    L.push('  # 内网域名走真实解析，否则输入路由后台/NAS 主机名会拿到 198.18.x.x');
+    L.push('  fake-ip-filter+:');
+    for (const f of src.fakeIpFilterExtra) L.push("    - '" + f + "'");
+    L.push('');
+  }
+
+  // ── TUN：组网网段根本不进 TUN ──
+  if ((src.tunExcludeExtra || []).length) {
+    L.push('tun:');
+    L.push('  route-exclude-address+:');
+    for (const t of src.tunExcludeExtra) L.push("    - '" + t + "'");
+    L.push('');
+  }
+
+  const dir = path.join(DIST, 'openclash');
+  ensure(dir);
+
+  // 自检：每条 RULE-SET 引用的 provider 必须在同一文件里定义过，否则内核加载失败
+  const defs = new Set();
+  for (const ln of L) {
+    const m = ln.match(/^  ([A-Za-z0-9_]+):$/);
+    if (m) defs.add(m[1]);
+  }
+  const refs = L.map(x => x.match(/^  - 'RULE-SET,([^,]+),/)).filter(Boolean).map(m => m[1]);
+  const miss = refs.filter(n => !defs.has(n));
+  if (miss.length) throw new Error('OpenClash 模块自检失败，未定义的 provider: ' + miss.join(', '));
+
+  fs.writeFileSync(path.join(dir, 'module.conf'), L.join('\n'), 'utf8');
+  return { rules: refs.length, providers: defs.size };
+}
+
+// ══════════════════════════════════════════════
 // Loon 配置（直接引用上游原始链接，不转换）
 // ══════════════════════════════════════════════
 function buildLoon(sets) {
@@ -348,8 +446,10 @@ function buildLoon(sets) {
   console.log('=== 生成产物 ===');
   const f = buildFlClash(sets);
   const l = buildLoon(sets);
+  const oc = buildOpenClash(sets);
   console.log('  dist/flclash-override.js   provider ' + f.providers + ' / 规则 ' + f.rules);
   console.log('  dist/loon/loon.conf        引用 ' + l + ' 个上游规则集');
+  console.log('  dist/openclash/module.conf  provider ' + oc.providers + ' / RULE-SET ' + oc.rules + ' 条');
   console.log('');
   console.log('  去重移除 ' + removed + ' 条重复项');
   console.log('  合计 domain=' + totalD + '  ip=' + totalI + '  kw=' + totalK +
