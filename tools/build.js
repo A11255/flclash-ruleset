@@ -243,6 +243,79 @@ function main(config) {
 //   rule-providers:    → 哈希递归合并
 //   dns.fake-ip-filter+ / tun.route-exclude-address+ → 数组追加
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// OpenClash 内联版（零 rule-provider）
+// 排查用：所有规则直接写进 +rules，不引用任何外部文件。
+// 若这版能启动而 provider 版不能，则问题锁定在 rule-provider 机制。
+// ══════════════════════════════════════════════
+function buildOpenClashInline(sets) {
+  const MAX_DOMAIN = 1500;
+  const L = [];
+  L.push('# OpenClash 覆写模块（内联版）');
+  L.push('# 零 rule-provider：不下载任何规则文件，规则全部写在本文件里。');
+  L.push('# 自动生成，请勿手改。');
+  L.push('');
+  L.push('[YAML]');
+  L.push('# +rules = 插入到规则数组开头，所以这里的顺序就是优先级');
+  L.push('+rules:');
+
+  // ── 内网 / 组网兜底 ──
+  for (const g of src.guardRules || []) L.push("  - '" + g + "'");
+
+  const adSets = sets.filter(s => s.k && s.u.openclash !== false && s.u.policy === 'REJECT');
+
+  // ── 广告关键词（总量小，全收）──
+  let nk = 0;
+  for (const s of adSets) {
+    for (const kw of s.k.kw) {
+      L.push("  - '" + kw + ",REJECT'");
+      nk++;
+    }
+  }
+
+  // ── 广告域名（按 sources.json 顺序截断）──
+  let nd = 0;
+  outer:
+  for (const s of adSets) {
+    for (const d of s.k.domain) {
+      if (nd >= MAX_DOMAIN) break outer;
+      L.push("  - 'DOMAIN-SUFFIX," + d + ",REJECT'");
+      nd++;
+    }
+  }
+
+  // ── 广告 IP ──
+  // 内联到 rules 里必须区分 v4/v6：IPv6 要用 IP-CIDR6，写成 IP-CIDR 会让内核解析失败。
+  // （provider 版靠 behavior: ipcidr 自动识别，所以以前没暴露这个差异）
+  const ipRule = (cidr, policy) =>
+    (cidr.indexOf(':') >= 0 ? 'IP-CIDR6,' : 'IP-CIDR,') + cidr + ',' + policy + ',no-resolve';
+  let ni = 0;
+  for (const s of adSets) {
+    for (const ip of s.k.ip) {
+      L.push("  - '" + ipRule(ip, 'REJECT') + "'");
+      ni++;
+    }
+  }
+
+  // ── 系统服务直连（Apple 推送 / FCM / 系统更新，量很小，全收）──
+  let nc = 0;
+  for (const s of sets) {
+    if (!s.k || s.u.openclash === false || s.u.policy !== 'DIRECT') continue;
+    for (const kw of s.k.kw) { L.push("  - '" + kw + ",DIRECT'"); nc++; }
+    for (const d of s.k.domain) { L.push("  - 'DOMAIN-SUFFIX," + d + ",DIRECT'"); nc++; }
+    for (const ip of s.k.ip) { L.push("  - '" + ipRule(ip, 'DIRECT') + "'"); nc++; }
+  }
+  L.push('');
+
+  const dir = path.join(DIST, 'openclash');
+  ensure(dir);
+  fs.writeFileSync(path.join(dir, 'module.conf'), L.join('\n'), 'utf8');
+
+  const total = nk + nd + ni + nc;
+  console.log('    内联构成: 关键词 ' + nk + ' / 域名 ' + nd + ' / IP ' + ni + ' / 直连 ' + nc + ' = ' + total + ' 条');
+  return { rules: total, providers: 0 };
+}
+
 function buildOpenClash(sets) {
   const L = [];
 
@@ -484,10 +557,15 @@ function buildLoon(sets) {
   console.log('=== 生成产物 ===');
   const f = buildFlClash(sets);
   const l = buildLoon(sets);
-  const oc = buildOpenClash(sets);
+  // openclashInline:true 时走零 provider 的内联版（排查 provider 机制问题用）
+  const oc = src.openclashInline ? buildOpenClashInline(sets) : buildOpenClash(sets);
   console.log('  dist/flclash-override.js   provider ' + f.providers + ' / 规则 ' + f.rules);
   console.log('  dist/loon/loon.conf        引用 ' + l + ' 个上游规则集');
-  console.log('  dist/openclash/module.conf  provider ' + oc.providers + ' / RULE-SET ' + oc.rules + ' 条');
+  if (src.openclashInline) {
+    console.log('  dist/openclash/module.conf  【内联版】零 provider / 内嵌规则 ' + oc.rules + ' 条');
+  } else {
+    console.log('  dist/openclash/module.conf  provider ' + oc.providers + ' / RULE-SET ' + oc.rules + ' 条');
+  }
   console.log('');
   console.log('  去重移除 ' + removed + ' 条重复项');
   console.log('  合计 domain=' + totalD + '  ip=' + totalI + '  kw=' + totalK +
