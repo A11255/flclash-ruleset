@@ -1,86 +1,153 @@
 #!/usr/bin/env node
 /**
- * 规则集地址中心 · 生成器
+ * 规则中心 · 生成器
  *
- * 输入：sources.json（唯一手工维护的文件）
- * 输出：
- *   dist/flclash-override.js   FlClash / mihomo 覆写脚本
- *   dist/loon/<name>.list      Loon 规则集文件
- *   dist/loon/loon.conf        Loon 配置模板
+ * 流程：
+ *   1. 从 sources.json.upstream 拉取 Loon 格式的 .rule 文件
+ *   2. 自动分类成 domain / ipcidr / classical 三组
+ *   3. 生成 mihomo rule-provider yaml  →  dist/mihomo/
+ *   4. 生成 FlClash 覆写脚本           →  dist/flclash-override.js
+ *   5. 生成 Loon 配置（直接引用上游原始链接）→  dist/loon/loon.conf
  *
- * 用法：node tools/build.js
+ * 用法：
+ *   node tools/build.js           有本地缓存就用缓存
+ *   node tools/build.js --fetch   强制重新下载
  */
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
-const CDN = 'https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main';
-
+const CACHE = path.join(ROOT, '_upstream');
 const src = JSON.parse(fs.readFileSync(path.join(ROOT, 'sources.json'), 'utf8'));
-const policyMap = src.policyMap || { flclash: {}, loon: {} };
+const CDN = src.cdnBase;
+const FORCE = process.argv.includes('--fetch');
 
-// ── 读 mihomo yaml 的 payload（轻量解析，不引第三方库）──
-function readPayload(file) {
-  const abs = path.join(ROOT, file);
-  if (!fs.existsSync(abs)) throw new Error('文件不存在: ' + file);
-  const txt = fs.readFileSync(abs, 'utf8');
-  const items = [];
-  const re = /^\s*-\s*'([^']*)'\s*$/gm;
-  let m;
-  while ((m = re.exec(txt)) !== null) {
-    const v = m[1].trim();
-    if (v) items.push(v);
-  }
-  return items;
-}
-
-function ensureDir(d) {
+function ensure(d) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-function pick(target) {
-  return src.rulesets.filter(r => (r.targets || []).indexOf(target) !== -1);
+async function loadRemote(u) {
+  const cache = path.join(CACHE, u.name + '.rule');
+  if (!FORCE && fs.existsSync(cache)) {
+    return fs.readFileSync(cache, 'utf8');
+  }
+  if (typeof fetch !== 'function') {
+    throw new Error('当前 Node 没有 fetch，请先准备 _upstream 缓存或升级 Node 到 18+');
+  }
+  const res = await fetch(u.url);
+  if (!res.ok) throw new Error(u.name + ' -> HTTP ' + res.status);
+  const txt = await res.text();
+  ensure(CACHE);
+  fs.writeFileSync(cache, txt, 'utf8');
+  return txt;
 }
 
-// ══════════════════════════════════════════════════════
-// 1. FlClash 覆写脚本
-// ══════════════════════════════════════════════════════
-function buildFlClash() {
-  const list = pick('flclash');
+/** 把 .rule 拆成 domain / ip / keyword 三类 */
+function classify(text) {
+  const domain = new Set();
+  const ip = new Set();
+  const kw = new Set();
+  const dropped = {};
+
+  for (const raw of text.split(/\r?\n/)) {
+    const l = raw.trim();
+    if (!l || l.startsWith('#') || l.startsWith(';') || l.startsWith('//')) continue;
+
+    const i = l.indexOf(',');
+    if (i === -1) {
+      const d = l.replace(/^\./, '').toLowerCase();
+      if (d && d.indexOf(' ') === -1) domain.add(d);
+      continue;
+    }
+
+    const type = l.slice(0, i).trim().toUpperCase();
+    const rest = l.slice(i + 1).trim();
+
+    if (type === 'DOMAIN' || type === 'DOMAIN-SUFFIX') {
+      const d = rest.replace(/^\./, '').toLowerCase();
+      if (d) domain.add(d);
+    } else if (type === 'IP-CIDR' || type === 'IP-CIDR6') {
+      const c = rest.split(',')[0].trim();
+      if (c) ip.add(c);
+    } else if (type === 'DOMAIN-KEYWORD') {
+      if (rest) kw.add('DOMAIN-KEYWORD,' + rest);
+    } else {
+      dropped[type] = (dropped[type] || 0) + 1;
+    }
+  }
+  return { domain, ip, kw, dropped };
+}
+
+function yamlPayload(arr) {
+  return 'payload:\n' + arr.map(x => "  - '" + String(x).replace(/'/g, "''") + "'").join('\n') + '\n';
+}
+
+function pm(target, policy) {
+  const m = (src.policyMap || {})[target] || {};
+  return m[policy] || policy;
+}
+
+/**
+ * raw.githubusercontent.com → jsDelivr 镜像
+ * iOS 上 Loon 直连 raw 经常超时，jsDelivr 国内可直连。
+ * 注意 jsDelivr 单文件上限 20 MB，当前最大的 .rule 约 6 MB，安全。
+ */
+function toCdn(url) {
+  const m = url.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
+  if (!m) return url;
+  return 'https://cdn.jsdelivr.net/gh/' + m[1] + '/' + m[2] + '@' + m[3] + '/' + m[4];
+}
+
+// ══════════════════════════════════════════════
+// FlClash 覆写脚本
+// ══════════════════════════════════════════════
+function buildFlClash(sets) {
   const pv = [];
-  for (const r of list) {
-    const p = policyMap.flclash[r.policy] || r.policy;
-    pv.push(
-      '    ' + r.name + ': {\n' +
-      '      type: "http",\n' +
-      '      behavior: ' + JSON.stringify(r.behavior) + ',\n' +
-      '      format: "yaml",\n' +
-      '      url: URL_BASE + ' + JSON.stringify(path.basename(r.file)) + ',\n' +
-      '      interval: UPDATE_INTERVAL,\n' +
-      '      path: "./providers/" + ' + JSON.stringify(path.basename(r.file)) + '\n' +
-      '    }'
-    );
+  const rules = [];
+
+  function provEntry(name, behavior, file) {
+    return '  ' + name + ': {\n' +
+      '    type: "http",\n' +
+      '    behavior: ' + JSON.stringify(behavior) + ',\n' +
+      '    format: "yaml",\n' +
+      '    url: URL_BASE + ' + JSON.stringify(file) + ',\n' +
+      '    interval: UPDATE_INTERVAL,\n' +
+      '    path: "./providers/" + ' + JSON.stringify(file) + '\n' +
+      '  }';
   }
 
-  const ruleLines = [];
-  for (const g of src.guardRules || []) ruleLines.push('  ' + JSON.stringify(g) + ',');
-  for (const r of list) {
-    const p = policyMap.flclash[r.policy] || r.policy;
-    let line = 'RULE-SET,' + r.name + ',' + p;
-    if (r.behavior === 'ipcidr') line += ',no-resolve';
-    ruleLines.push('  ' + JSON.stringify(line) + ',');
+  for (const g of src.guardRules || []) rules.push(JSON.stringify(g));
+
+  for (const s of sets) {
+    const p = pm('flclash', s.u.policy);
+    if (s.k.kw.size) {
+      rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_KW,' + p));
+      pv.push(provEntry(s.u.name + '_KW', 'classical', s.u.name + '_KW.yaml'));
+    }
+    if (s.k.domain.size) {
+      rules.push(JSON.stringify('RULE-SET,' + s.u.name + ',' + p));
+      pv.push(provEntry(s.u.name, 'domain', s.u.name + '_Domain.yaml'));
+    }
   }
-  for (const t of src.tailRules || []) ruleLines.push('  ' + JSON.stringify(t) + ',');
-  ruleLines.push('  "MATCH," + PROXY_GROUP');
+
+  for (const s of sets) {
+    if (!s.k.ip.size) continue;
+    const p = pm('flclash', s.u.policy);
+    rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_IP,' + p + ',no-resolve'));
+    pv.push(provEntry(s.u.name + '_IP', 'ipcidr', s.u.name + '_IP.yaml'));
+  }
+
+  for (const t of src.tailRules || []) rules.push(JSON.stringify(t));
+  rules.push('"MATCH," + PROXY_GROUP');
 
   const js = `// ============================================================================
 // FlClash 覆写脚本 · 自动生成，请勿手改
-// 源文件：sources.json  |  生成器：tools/build.js
-// 改规则集请改 sources.json 并 push，CI 会重新生成此文件
+// 源：sources.json → tools/build.js → 从 Code-Dramatist/Rule_Actions 转换
+// 改规则请改 sources.json 并 push，CI 会重新生成
 // ============================================================================
 
-var URL_BASE = ${JSON.stringify(CDN + '/ruleset/')};
+var URL_BASE = ${JSON.stringify(CDN + '/dist/mihomo/')};
 var UPDATE_INTERVAL = 86400;
 var PROXY_GROUP = "节点选择";
 
@@ -92,7 +159,7 @@ ${pv.join(',\n')}
 };
 
 var RULES = [
-${ruleLines.join('\n')}
+${rules.join(',\n')}
 ];
 
 function resolveProxyGroup(config) {
@@ -139,80 +206,87 @@ function main(config) {
 }
 `;
   fs.writeFileSync(path.join(DIST, 'flclash-override.js'), js, 'utf8');
-  return { count: list.length, rules: ruleLines.length };
+  return { providers: pv.length, rules: rules.length };
 }
 
-// ══════════════════════════════════════════════════════
-// 2. Loon 规则集 + 配置
-// ══════════════════════════════════════════════════════
-function toLoonLines(items, behavior) {
-  const out = [];
-  for (const v of items) {
-    if (behavior === 'domain') {
-      const d = v.replace(/^\./, '');
-      if (!d || d.indexOf(' ') !== -1) continue;
-      out.push('DOMAIN-SUFFIX,' + d);
-    } else if (behavior === 'ipcidr') {
-      out.push('IP-CIDR,' + v + ',no-resolve');
-    } else {
-      out.push(v);
-    }
+// ══════════════════════════════════════════════
+// Loon 配置（直接引用上游原始 .rule，不转换）
+// ══════════════════════════════════════════════
+function buildLoon(sets) {
+  const guard = (src.guardRules || []).filter(g =>
+    g.indexOf('GEOIP,LAN') !== 0 && g.indexOf('GEOIP,private') !== 0);
+
+  const c = [];
+  c.push('[General]');
+  c.push('internet-test-url = http://www.gstatic.com/generate_204');
+  c.push('proxy-test-url = http://www.gstatic.com/generate_204');
+  c.push('test-timeout = 5');
+  c.push('geoip = true');
+  c.push('');
+  c.push('[Proxy Group]');
+  c.push('节点选择 = select,PROXY,DIRECT');
+  c.push('');
+  c.push('[Rule]');
+  c.push('# 上游规则走 jsDelivr 镜像，避免 iOS 直连 raw.githubusercontent.com 超时');
+  for (const g of guard) c.push(g);
+  for (const s of sets) {
+    c.push('RULE-SET,' + toCdn(s.u.url) + ',' + pm('loon', s.u.policy));
   }
-  return out;
-}
+  for (const t of src.tailRules || []) c.push(t);
+  c.push('FINAL,节点选择');
+  c.push('');
 
-function buildLoon() {
-  const list = pick('loon');
   const dir = path.join(DIST, 'loon');
-  ensureDir(dir);
-
-  const stats = [];
-  for (const r of list) {
-    const items = readPayload(r.file);
-    const lines = toLoonLines(items, r.behavior);
-    const name = r.name + '.list';
-    fs.writeFileSync(path.join(dir, name), lines.join('\n') + '\n', 'utf8');
-    stats.push({ name, count: lines.length });
-  }
-
-  // 配置模板
-  const guard = (src.guardRules || [])
-    .filter(g => g.indexOf('GEOIP,LAN') !== 0 && g.indexOf('GEOIP,private') !== 0);
-
-  const conf = [];
-  conf.push('[General]');
-  conf.push('internet-test-url = http://www.gstatic.com/generate_204');
-  conf.push('proxy-test-url = http://www.gstatic.com/generate_204');
-  conf.push('test-timeout = 5');
-  conf.push('geoip = true');
-  conf.push('');
-  conf.push('[Proxy Group]');
-  conf.push('节点选择 = select,PROXY,DIRECT');
-  conf.push('');
-  conf.push('[Rule]');
-  for (const g of guard) conf.push(g);
-  for (const r of list) {
-    const p = policyMap.loon[r.policy] || r.policy;
-    conf.push('RULE-SET,' + CDN + '/dist/loon/' + r.name + '.list,' + p);
-  }
-  conf.push('GEOIP,CN,DIRECT');
-  conf.push('FINAL,节点选择');
-  conf.push('');
-
-  fs.writeFileSync(path.join(dir, 'loon.conf'), conf.join('\n'), 'utf8');
-  return stats;
+  ensure(dir);
+  fs.writeFileSync(path.join(dir, 'loon.conf'), c.join('\n'), 'utf8');
+  return sets.length;
 }
 
-// ══════════════════════════════════════════════════════
-ensureDir(DIST);
-const f = buildFlClash();
-const l = buildLoon();
+// ══════════════════════════════════════════════
+(async () => {
+  ensure(DIST);
+  const mihomoDir = path.join(DIST, 'mihomo');
+  ensure(mihomoDir);
 
-console.log('=== FlClash ===');
-console.log('  provider: ' + f.count + '  规则: ' + f.rules);
-console.log('=== Loon ===');
-let total = 0;
-for (const s of l) total += s.count;
-for (const s of l) console.log('  ' + s.name.padEnd(26) + s.count + ' 条');
-console.log('  合计 ' + total + ' 条');
-console.log('\n生成完毕 → dist/');
+  const sets = [];
+  console.log('=== 拉取并转换上游规则 ===');
+  for (const u of src.upstream) {
+    const text = await loadRemote(u);
+    const k = classify(text);
+    const out = [];
+
+    if (k.domain.size) {
+      fs.writeFileSync(
+        path.join(mihomoDir, u.name + '_Domain.yaml'),
+        yamlPayload(Array.from(k.domain).sort()), 'utf8');
+      out.push('domain ' + k.domain.size);
+    }
+    if (k.ip.size) {
+      fs.writeFileSync(
+        path.join(mihomoDir, u.name + '_IP.yaml'),
+        yamlPayload(Array.from(k.ip).sort()), 'utf8');
+      out.push('ipcidr ' + k.ip.size);
+    }
+    if (k.kw.size) {
+      fs.writeFileSync(
+        path.join(mihomoDir, u.name + '_KW.yaml'),
+        yamlPayload(Array.from(k.kw).sort()), 'utf8');
+      out.push('kw ' + k.kw.size);
+    }
+
+    const dk = Object.keys(k.dropped);
+    const ds = dk.length ? '  跳过: ' + dk.map(x => x + '×' + k.dropped[x]).join(', ') : '';
+    console.log('  ' + (u.name + ' (' + u.policy + ')').padEnd(24) + out.join('  |  ') + ds);
+
+    sets.push({ u, k });
+  }
+
+  console.log('');
+  console.log('=== 生成产物 ===');
+  const f = buildFlClash(sets);
+  const l = buildLoon(sets);
+  console.log('  dist/flclash-override.js    provider ' + f.providers + ' / 规则 ' + f.rules);
+  console.log('  dist/loon/loon.conf         引用 ' + l + ' 个上游 .rule');
+  console.log('');
+  console.log('完成 → dist/');
+})();
