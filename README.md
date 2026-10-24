@@ -13,35 +13,58 @@ sources.json
     └─ Loon 端直接用上游原始链接（本来就是 Loon/Surge 格式，不需要转）
 ```
 
-## 地址
+## 地址（固定，永不需要更换）
 
-**FlClash（Windows / Android）** — 覆写 → 模式「脚本」→ 远程下载：
-
-```
-https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@6b5394c/dist/flclash-override.js
-```
-
-**Loon（iOS）** — 从 URL 导入配置，或把 `[Rule]` 段复制进现有配置：
+**FlClash** — 覆写 → 模式「脚本」→ 远程下载：
 
 ```
-https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@6b5394c/dist/loon/loon.conf
+https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/flclash-override.js
 ```
 
-### 为什么这两个地址写的是 SHA 而不是 @main
+**Loon** — 从 URL 导入配置，或把 `[Rule]` 段复制进现有配置：
 
-**这两个地址几乎永远不用换。** 它们只是「外壳」：真正的规则内容在 `dist/mihomo/*.yaml`，脚本内部的 `URL_BASE` 指向 `@main/dist/mihomo/`。上游规则每天更新时，变的只是那些 yaml，**脚本和 loon.conf 一个字都不会变**。
+```
+https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/loon/loon.conf
+```
 
-只有当我增删规则源、调整规则顺序时，这两个文件才会变，那时才会给新 SHA。日常规则更新不需要你动任何设备。
+两个地址里都没有 commit SHA，只有不变的分支名 `main`。上游规则每天更新、CI 每次重建，**这两个地址都不会变**，你不需要改任何设备。
 
-不用 `@main` 直接取这两个文件，是因为 jsDelivr 对它们的缓存粘住了（实测 4 个镜像各返回不同版本，purge 返回 200 但内容不变）：
+### 为什么用 gh-proxy.com 而不是 jsDelivr
 
-| 路径 | `@main` 状态 |
-|---|---|
-| `dist/mihomo/*.yaml` | ✅ 正常，始终最新 |
-| `dist/flclash-override.js` | ❌ 卡在 5 个版本前，指向**已删除的 `ruleset/`**，会导致规则全空 |
-| `dist/loon/loon.conf` | ❌ 卡在更早的 16 个 `.list` 版本 |
+「路径固定」和「内容实时」要同时成立，实测下来的结果：
 
-yaml 路径不受影响，因为它们是 `dist/mihomo/` 下的独立文件，从未被旧版本引用过，缓存里没有历史包袱。这就是「脚本钉 SHA + 规则走 @main」这个组合能成立的原因。
+| 地址 | 路径固定 | 内容实时 | 结论 |
+|---|---|---|---|
+| `cdn.jsdelivr.net/...@main/...` | ✅ | ❌ 脚本卡在 5 个版本前，还指向已删除的 `ruleset/` | 不能用 |
+| `ghproxy.net/...` | ✅ | ✅ 但 7.5MB 要 44 秒 | 太慢 |
+| `cdn.statically.io/...` | ✅ | ❌ 大文件被截断到 1458 条 | 不能用 |
+| `raw.githubusercontent.com/...` | ✅ | ✅ | 可用，国内部分线路打不开 |
+| **`gh-proxy.com/...`** | ✅ | ✅ **0.4 秒，5 次请求 MD5 全一致** | **采用** |
+
+`gh-proxy.com` 是 GitHub raw 的反向代理，**不做长缓存**，每次请求回源，所以你拿到的永远是仓库里的最新内容。实测脚本连续 5 次请求全部一致、约 0.4 秒。
+
+### 两段地址的分工（容易踩的点）
+
+**脚本和规则文件是被两个不同的程序下载的，走不同的网络：**
+
+| 谁下载 | 网络路径 | 地址 |
+|---|---|---|
+| FlClash 应用 | 经 TUN → 你的代理节点 | `gh-proxy.com`（脚本本体） |
+| mihomo 内核 | **直接出网，不经 TUN** | `cdn.jsdelivr.net/@main/dist/mihomo/`（脚本内部） |
+
+内核下载规则文件时不行经隧道，所以那部分必须用国内可直连的地址，jsDelivr 满足这个条件；而 `dist/mihomo/*.yaml` 这些路径的缓存是正常的，每次都返回最新内容（实测 21 个文件全部正确）。
+
+这个分工写在脚本里的 `URL_BASE`，由生成器自动产出，你不需要管。
+
+### 备选地址
+
+如果哪天 `gh-proxy.com` 不可用，把地址开头的 `https://gh-proxy.com/` 删掉，直接用：
+
+```
+https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/flclash-override.js
+```
+
+两者路径完全一致，前者只是替你在国内做中转。
 
 ## 规则源
 
