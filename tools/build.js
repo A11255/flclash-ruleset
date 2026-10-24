@@ -275,27 +275,43 @@ function buildOpenClash(sets) {
   L.push('');
 
   // ── 规则：前置插入，保证在订阅规则之前、MATCH 之前生效 ──
+  // 只使用 DIRECT / REJECT 两个内建出站，不写任何自定义策略组名。
+  // 原因：OpenClash 的策略组名由订阅模板决定（🚀 节点选择 / 🐟 漏网之鱼 …），
+  // 名字对不上时内核直接报 policy not found、整份配置拒绝加载。
   L.push('# +rules = 插入到数组开头，所以这里的顺序就是优先级');
-  L.push('# ⚠ 「' + pm('flclash', 'PROXY') + '」是策略组名，必须和你 OpenClash 里真实存在的组名一致');
-  L.push('#   改法：服务 → OpenClash → 策略组 页面看到组名后，把本文件里的「' +
-    pm('flclash', 'PROXY') + '」全部替换掉');
-  L.push('#   名字不存在时内核会报 policy not found，配置加载失败');
+  L.push('# 本段只使用 DIRECT / REJECT 两个内建出站，不依赖任何自定义策略组名，');
+  L.push('# 因此不管你用哪套 OpenClash 模板都不会因为「找不到策略组」而加载失败。');
   L.push('+rules:');
   for (const g of src.guardRules || []) L.push("  - '" + g + "'");
-  for (const s of sets) {
-    if (!s.k) continue;
-    const p = pm('flclash', s.u.policy);
-    if (s.k.kw.size) L.push("  - 'RULE-SET," + s.u.name + '_KW,' + p + "'");
+
+  const builtin = [];   // 直接用 DIRECT / REJECT 的规则
+  const proxyR = [];    // 需要自定义策略组的规则，默认注释掉
+  const emit = (line, policy) => {
+    if (policy === 'PROXY') proxyR.push(line);
+    else builtin.push(line);
+  };
+
+  for (const cls of ['kw', 'domain', 'ip']) {
+    for (const s of sets) {
+      if (!s.k || !s.k[cls].size) continue;
+      const p = pm('flclash', s.u.policy);
+      const suffix = cls === 'ip' ? ',no-resolve' : '';
+      const nm = s.u.name + (cls === 'kw' ? '_KW' : cls === 'ip' ? '_IP' : '');
+      emit('RULE-SET,' + nm + ',' + p + suffix, s.u.policy);
+    }
   }
-  for (const s of sets) {
-    if (!s.k) continue;
-    const p = pm('flclash', s.u.policy);
-    if (s.k.domain.size) L.push("  - 'RULE-SET," + s.u.name + ',' + p + "'");
-  }
-  for (const s of sets) {
-    if (!s.k) continue;
-    const p = pm('flclash', s.u.policy);
-    if (s.k.ip.size) L.push("  - 'RULE-SET," + s.u.name + '_IP,' + p + ',no-resolve' + "'");
+  for (const r of builtin) L.push("  - '" + r + "'");
+
+  if (proxyR.length) {
+    L.push('');
+    L.push('# ── 以下需要自定义策略组，默认不启用 ──────────────────────────');
+    L.push('# 你的 OpenClash 里没有名为「' + pm('flclash', 'PROXY') + '」的策略组，所以这部分先注释掉。');
+    L.push('# 不启用也不影响分流：没被上面规则命中的流量会落到配置末尾的 MATCH，');
+    L.push('# 那个目标本来就是代理组（你日志里是 🐟 漏网之鱼），效果一致。');
+    L.push('#');
+    L.push('# 确实要启用：去掉下面 ' + proxyR.length + ' 行的 # ，');
+    L.push('# 并把「你的代理策略组」换成策略组页面里真实存在的名字。');
+    for (const r of proxyR) L.push("#  - '" + r.replace(',节点选择', ',你的代理策略组') + "'");
   }
   L.push('');
 
