@@ -48,6 +48,49 @@
       "policy": "DIRECT"
     },
     {
+      "_note": "以下 7 个来自 kelee.one，被 Cloudflare 按机房 IP 封锁（本机 + GitHub Actions 都拿不到），但手机上的 Loon 可以直连。所以只进 loon.conf，不进 FlClash。flclash:false 表示生成器不会去下载它。",
+      "name": "Cloudflarecn",
+      "url": "https://rule.kelee.one/Loon/Cloudflarecn.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "Cloudflare",
+      "url": "https://rule.kelee.one/Loon/Cloudflare.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "AppleAccount",
+      "url": "https://kelee.one/Tool/Loon/Lsr/AppleAccount.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "AppStore",
+      "url": "https://kelee.one/Tool/Loon/Lsr/AppStore.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "WeChat",
+      "url": "https://rule.kelee.one/Loon/WeChat.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "Tencent",
+      "url": "https://rule.kelee.one/Loon/Tencent.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
+      "name": "TestFlight",
+      "url": "https://rule.kelee.one/Loon/TestFlight.lsr",
+      "policy": "DIRECT",
+      "flclash": false
+    },
+    {
       "name": "Direct_Rule",
       "url": "https://github.com/Code-Dramatist/Rule_Actions/raw/refs/heads/main/Direct_Rule/Direct_Rule.rule",
       "policy": "DIRECT"

@@ -43,10 +43,19 @@ https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/loon.conf
 | 6 | `apple_update` | DIRECT | 5 | — | — | Apple 系统更新 |
 | 7 | `Google_FCM` | DIRECT | 13 | 26 | — | Google 推送 |
 | 8 | `Apple_Push` | DIRECT | 3 | 9 | — | Apple 推送 |
-| 9 | `Direct_Rule` | DIRECT | 110580 | 12557 | 13 | 国内直连主表 |
-| 10 | `Proxy_Rule` | PROXY | 35083 | 1014 | 55 | 需要走代理的域名 |
+| 9 | `Cloudflarecn` | DIRECT | — | — | — | 仅 Loon |
+| 10 | `Cloudflare` | DIRECT | — | — | — | 仅 Loon |
+| 11 | `AppleAccount` | DIRECT | — | — | — | 仅 Loon |
+| 12 | `AppStore` | DIRECT | — | — | — | 仅 Loon |
+| 13 | `WeChat` | DIRECT | — | — | — | 仅 Loon |
+| 14 | `Tencent` | DIRECT | — | — | — | 仅 Loon |
+| 15 | `TestFlight` | DIRECT | — | — | — | 仅 Loon |
+| 16 | `Direct_Rule` | DIRECT | 110580 | 12557 | 13 | 国内直连主表 |
+| 17 | `Proxy_Rule` | PROXY | 35083 | 1014 | 55 | 需要走代理的域名 |
 
-`—` 表示该表不含此类规则。合计 **482072 条**（域名 467600 / IP 14113 / 关键词 359），生成 **21 个 provider / 35 条规则**。
+`—` 表示该表不含此类规则。**FlClash 侧**合计 **482072 条**（域名 467600 / IP 14113 / 关键词 359），生成 **21 个 provider / 35 条规则**；**Loon 侧 16 条 RULE-SET**（含 7 个 kelee 表）。
+
+标注「仅 Loon」的 7 个表在 `sources.json` 里写了 `"flclash": false`。生成器**不会去下载它们**，只把链接写进 `loon.conf`。
 
 ## 转换规则
 
@@ -107,19 +116,24 @@ _upstream/                  上游规则缓存（不入库）
 
 ## 已知限制
 
-**kelee.one 的 7 个规则源无法自动拉取。** 以下链接被 Cloudflare 按机房 IP 整体封锁（返回 `Attention Required! You have been blocked`），本机和 GitHub Actions 都拿不到：
+**kelee.one 的 7 个表只给 Loon。** 这些链接被 Cloudflare 按机房 IP 封锁（`Attention Required! You have been blocked`，连站点根路径都 403），本机和 GitHub Actions 都拿不到；但手机上的 Loon 走运营商出口，可以正常读取。
 
-```
-rule.kelee.one/Loon/Cloudflarecn.lsr
-rule.kelee.one/Loon/Cloudflare.lsr
-kelee.one/Tool/Loon/Lsr/AppleAccount.lsr
-kelee.one/Tool/Loon/Lsr/AppStore.lsr
-rule.kelee.one/Loon/WeChat.lsr
-rule.kelee.one/Loon/Tencent.lsr
-rule.kelee.one/Loon/TestFlight.lsr
-```
+所以这 7 个表在 `sources.json` 里标了 `"flclash": false`：**只写进 `loon.conf`，生成器不下载、不转成 yaml**。FlClash 端少了这 7 个表，影响很小——它们全是 DIRECT 规则（微信/腾讯/App Store/TestFlight/Apple 账号/Cloudflare CDN），而 `Direct_Rule` 的 11 万条域名已经覆盖了绝大部分。
 
-已跳过。需要的话有两个办法：换成 `blackmatrix7/ios_rule_script` 的同名表（WeChat / Tencent / Cloudflare / TestFlight / AppStore / AppleID 都能对上，`Cloudflarecn` 无对应），或你手动下载后作为快照固化进仓库。
+想让它们也进 FlClash，只有一条路：把这 7 个 `.lsr` 文件手动存下来放进仓库（`_vendor/`），生成器读本地文件。这样 CI 不依赖网络。
+
+**Adblock4limbo 只有 DNS 层规则能用于 FlClash。** 它那 548 条域名规则里，511 条已被 `Reject_Rule` 覆盖，去重后只剩 37 条。真正去网页广告靠的是配套的三个 JS：
+
+| 脚本 | 作用 | 依赖 |
+|---|---|---|
+| `Adblock4limbo.js` | 重写脚本，告诉代理软件如何注入 | `[rewrite_local]` + `[mitm]` |
+| `Adblock4limbo.user.js` | 实际删除网页广告元素 | 被注入到页面 |
+| `Adblock4limbo.function.js` | 右下角导航按钮 | 被 `user.js` 引用 |
+
+这需要 **TLS 中间人解密（MITM）+ 页面 JS 注入**，是 Surge / Loon / QuantumultX 的能力。mihomo（FlClash 内核）没有 MITM 引擎，**做不了**。
+
+- **Loon**：支持 MITM，按 limbopro 文章配 `[Rewrite]` 和 `[Mitm]` 即可，与本文库无关
+- **PC**：装油猴（Tampermonkey）后加 `Adblock4limbo.user.js`
 
 ## 说明
 

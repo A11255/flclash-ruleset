@@ -147,19 +147,19 @@ function buildFlClash(sets) {
 
   // 关键词表最先匹配（classical 是包含匹配，优先级最高）
   for (const s of sets) {
-    if (!s.k.kw.size) continue;
+    if (!s.k || !s.k.kw.size) continue;
     rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_KW,' + pm('flclash', s.u.policy)));
     pv.push(provEntry(s.u.name + '_KW', 'classical', s.u.name + '_KW.yaml'));
   }
   // 域名表
   for (const s of sets) {
-    if (!s.k.domain.size) continue;
+    if (!s.k || !s.k.domain.size) continue;
     rules.push(JSON.stringify('RULE-SET,' + s.u.name + ',' + pm('flclash', s.u.policy)));
     pv.push(provEntry(s.u.name, 'domain', s.u.name + '_Domain.yaml'));
   }
   // IP 表放最后，全部 no-resolve（避免为纯 IP 规则触发 DNS 解析）
   for (const s of sets) {
-    if (!s.k.ip.size) continue;
+    if (!s.k || !s.k.ip.size) continue;
     rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_IP,' + pm('flclash', s.u.policy) + ',no-resolve'));
     pv.push(provEntry(s.u.name + '_IP', 'ipcidr', s.u.name + '_IP.yaml'));
   }
@@ -280,6 +280,13 @@ function buildLoon(sets) {
   const sets = [];
   console.log('=== 拉取并转换上游规则 ===');
   for (const u of src.upstream) {
+    // flclash:false 的源只写进 loon.conf，不下载、不转换。
+    // 用于那些访问端能直连、但本机/CI 拿不到的源（如 kelee.one 被 Cloudflare 封机房 IP）。
+    if (u.flclash === false) {
+      sets.push({ u, k: null, loonOnly: true });
+      console.log('  ' + (u.name + ' (' + u.policy + ')').padEnd(26) + '仅 Loon，跳过下载');
+      continue;
+    }
     const text = await loadRemote(u);
     const k = classify(text);
     sets.push({ u, k });
@@ -291,6 +298,7 @@ function buildLoon(sets) {
   const seen = { domain: new Set(), ip: new Set(), kw: new Set() };
   let removed = 0;
   for (const s of sets) {
+    if (!s.k) continue;
     const rm = { domain: 0, ip: 0, kw: 0 };
     for (const cls of ['kw', 'domain', 'ip']) {
       const kept = new Set();
@@ -307,6 +315,7 @@ function buildLoon(sets) {
   let totalD = 0, totalI = 0, totalK = 0;
   for (const s of sets) {
     const { u, k } = s;
+    if (!k) continue;   // 仅 Loon 的源，没有可转换内容
     const out = [];
     if (k.domain.size) {
       fs.writeFileSync(path.join(mihomoDir, u.name + '_Domain.yaml'),
