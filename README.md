@@ -86,13 +86,21 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 
 > 改内容、切开关、新建模块之后都必须**重启插件**，不是 `reload`。覆写模块只在 `start_service` 里解析。
 
-### 不需要改任何策略组名
+### 策略组名：只有一个地方要配置
 
-模块里的规则**只使用 `DIRECT` 和 `REJECT` 两个内建出站**，不引用任何自定义策略组。
+模块里的规则绝大多数用 `DIRECT` / `REJECT` 两个内建出站，只有「走代理」那 3 条需要指向一个真实存在的策略组。
 
-这是踩过坑之后改的：OpenClash 的策略组名由订阅模板决定（`🚀 节点选择` / `🐟 漏网之鱼` / `🎯 全球直连` …），每套模板都不一样。规则里写死一个组名，名字对不上时内核直接报 `policy not found`，**整份配置拒绝加载**。
+**这个组名写在 `sources.json` 里，不写在模块里**：
 
-「走代理」那部分（`Proxy_Rule` 三个表）默认注释掉了，原因见下。所以这个模块加进来就能用，不用改任何东西。
+```json
+"policyMap": {
+  "openclash": { "PROXY": "🚀 手动选择", "DIRECT": "DIRECT", "REJECT": "REJECT" }
+}
+```
+
+当前值是 `🚀 手动选择`。**如果你 OpenClash 的「策略组」页面里组名不是这个，把 JSON 里那个值改掉，push 后 CI 会自动重建**——不要手改 `module.conf`，每次构建都会覆盖。
+
+为什么必须配置：OpenClash 的策略组名由订阅模板决定（`🚀 节点选择` / `🐟 漏网之鱼` / `🎯 全球直连` …），每套模板都不一样。规则里写死一个不存在的组名，内核会报 `policy not found`、**整份配置拒绝加载**。所以生成器做了降级：`policyMap.openclash.PROXY` 为空或还是占位符时，这 3 条会自动被注释掉，配置仍能正常加载。
 
 ### 一个需要注意的优先级副作用
 
@@ -128,27 +136,21 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 | 写法 | 语义 | 用途 |
 |---|---|---|
 | `rule-providers:` | 哈希递归合并 | 追加 21 个规则集，不动订阅自带的部分 |
-| `+rules:` | **数组前置插入** | 把 30 条规则插到订阅规则**前面**，保证优先匹配 |
+| `+rules:` | **数组前置插入** | 把 33 条规则插到订阅规则**前面**，保证优先匹配 |
 | `dns.fake-ip-filter+:` | 数组末尾追加 | 内网域名不走 fake-ip |
 | `tun.route-exclude-address+:` | 数组末尾追加 | 组网网段不进 TUN |
 
-生效的 30 条 = 12 条内网兜底 + 18 条 RULE-SET（3 个关键词表 + 9 个域名表 + 6 个 IP 表），规则内容与 FlClash 端同源，同一个 `sources.json`。
+生效的 33 条 = 12 条内网兜底 + 21 条 RULE-SET（4 个关键词表 + 10 个域名表 + 7 个 IP 表），规则内容与 FlClash 端同源，同一个 `sources.json`、同一个顺序（`guards → KW → domain → IP`）。
 
 生成器自带自检：每条 `RULE-SET` 引用的 provider 必须在同一文件里定义过，否则构建直接失败。
 
-### 和 FlClash 版的两处差别
+### 和 FlClash 版唯一的差别
 
-**1. 没有 `GEOIP,CN,DIRECT`**
+**没有 `GEOIP,CN,DIRECT`**
 
 FlClash 脚本里它是末尾的兜底规则。但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。OpenClash 一般自带国内直连兜底，所以省掉。
 
-**2. `Proxy_Rule` 三个表默认不启用**
-
-`Proxy_Rule` / `Proxy_Rule_KW` / `Proxy_Rule_IP` 的内容是「这些域名应该走代理」。FlClash 端它们指向 `节点选择`，OpenClash 没有这个组，所以这三条规则在文件末尾被注释掉了。
-
-**不启用不影响分流**：没被前置规则命中的流量会落到配置末尾的 `MATCH`，那个目标本来就是代理组（日志里是 `🐟 漏网之鱼`），效果等价。
-
-真要启用：去掉那 3 行的 `#`，把「你的代理策略组」换成策略组页面里的真实名字。provider 定义已经在文件里了，改完即可用。
+如果确认配置里没有国内直连规则，在模块的 `+rules` 块末尾手动补一条即可。
 
 ### 规则文件由谁下载
 
