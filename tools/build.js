@@ -249,10 +249,10 @@ function main(config) {
 // 若这版能启动而 provider 版不能，则问题锁定在 rule-provider 机制。
 // ══════════════════════════════════════════════
 function buildOpenClashInline(sets) {
-  const MAX_DOMAIN = 1500;
   const L = [];
-  L.push('# OpenClash 覆写模块（内联版）');
+  L.push('# OpenClash 覆写模块（内联版 · 去广告拉满）');
   L.push('# 零 rule-provider：不下载任何规则文件，规则全部写在本文件里。');
+  L.push('# 收录 AdBlock / adrules / rejectAd / Adblock4limbo 四张表的全部条目（已跨表去重）。');
   L.push('# 自动生成，请勿手改。');
   L.push('');
   L.push('[YAML]');
@@ -273,12 +273,10 @@ function buildOpenClashInline(sets) {
     }
   }
 
-  // ── 广告域名（按 sources.json 顺序截断）──
+  // ── 广告域名（全收，不截断）──
   let nd = 0;
-  outer:
   for (const s of adSets) {
     for (const d of s.k.domain) {
-      if (nd >= MAX_DOMAIN) break outer;
       L.push("  - 'DOMAIN-SUFFIX," + d + ",REJECT'");
       nd++;
     }
