@@ -18,16 +18,30 @@ sources.json
 **FlClash（Windows / Android）** — 覆写 → 模式「脚本」→ 远程下载：
 
 ```
-https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/flclash-override.js
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@6b5394c/dist/flclash-override.js
 ```
 
-> `@main` 有最长 12 小时 CDN 缓存。要立刻拿到最新版就用固定 commit SHA（`@<sha7>`），改完我会给新 SHA。
-
-**Loon（iOS）** — 配置从 URL 导入，或把 `[Rule]` 段复制进你现有配置：
+**Loon（iOS）** — 从 URL 导入配置，或把 `[Rule]` 段复制进现有配置：
 
 ```
-https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/loon.conf
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@6b5394c/dist/loon/loon.conf
 ```
+
+### 为什么这两个地址写的是 SHA 而不是 @main
+
+**这两个地址几乎永远不用换。** 它们只是「外壳」：真正的规则内容在 `dist/mihomo/*.yaml`，脚本内部的 `URL_BASE` 指向 `@main/dist/mihomo/`。上游规则每天更新时，变的只是那些 yaml，**脚本和 loon.conf 一个字都不会变**。
+
+只有当我增删规则源、调整规则顺序时，这两个文件才会变，那时才会给新 SHA。日常规则更新不需要你动任何设备。
+
+不用 `@main` 直接取这两个文件，是因为 jsDelivr 对它们的缓存粘住了（实测 4 个镜像各返回不同版本，purge 返回 200 但内容不变）：
+
+| 路径 | `@main` 状态 |
+|---|---|
+| `dist/mihomo/*.yaml` | ✅ 正常，始终最新 |
+| `dist/flclash-override.js` | ❌ 卡在 5 个版本前，指向**已删除的 `ruleset/`**，会导致规则全空 |
+| `dist/loon/loon.conf` | ❌ 卡在更早的 16 个 `.list` 版本 |
+
+yaml 路径不受影响，因为它们是 `dist/mihomo/` 下的独立文件，从未被旧版本引用过，缓存里没有历史包袱。这就是「脚本钉 SHA + 规则走 @main」这个组合能成立的原因。
 
 ## 规则源
 
