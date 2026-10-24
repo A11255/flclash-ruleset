@@ -29,10 +29,10 @@ var PROVIDER_SOURCE = "http";
 
 // ★★★ 只需要改这一行 ★★★ 把 YOUR_GITHUB_USER 换成你的 GitHub 用户名
 // 仓库名固定为 flclash-ruleset，规则集放在 ruleset/ 子目录
-var URL_BASE = "https://cdn.jsdelivr.net/gh/YOUR_GITHUB_USER/flclash-ruleset@main/ruleset/";
+var URL_BASE = "https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/ruleset/";
 
 // 备用源（jsDelivr 挂掉时切换用，国内直连 raw 可能超时）
-// var URL_BASE = "https://raw.githubusercontent.com/YOUR_GITHUB_USER/flclash-ruleset/main/ruleset/";
+// var URL_BASE = "https://raw.githubusercontent.com/A11255/flclash-ruleset/main/ruleset/";
 
 // 拉取间隔，秒。86400 = 每天一次
 var UPDATE_INTERVAL = 86400;
