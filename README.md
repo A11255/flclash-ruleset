@@ -8,7 +8,7 @@
 |---|---|---|---|
 | **FlClash**（Win / Android） | JS 覆写脚本 | 策略组 `节点选择` | 重启 VPN 时重新拉取 |
 | **Loon**（iOS） | `.conf` 的 `[Rule]` 段 | 策略组 `节点选择` | 手动或定时更新配置 |
-| **OpenClash**（OpenWrt） | INI 三段的覆写模块 | 策略组 `🚀 手动选择` | `#!CRON` 每天 4 点自动拉取并重启 |
+| **OpenClash**（OpenWrt） | INI 三段的覆写模块 | 订阅自带的策略组 | `#!CRON` 每天 4 点自动拉取并重启 |
 
 ```
 sources.json
@@ -120,21 +120,34 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 | `ENABLE_META_SNIFFER` | `1` | 开启域名嗅探。纯 IP 连接也能提取 SNI/Host，让域名规则命中 |
 | `RESTART` | `true` | 模块更新后自动重启插件，否则新规则不加载 |
 
-### 策略组名：只有一个地方要配置
+### 不需要配置任何策略组名
 
-模块里的规则绝大多数用 `DIRECT` / `REJECT` 两个内建出站，只有「走代理」那 3 条需要指向一个真实存在的策略组。
+模块里**没有一条规则引用自定义策略组**，全部使用 `DIRECT` / `REJECT` 两个内建出站。所以不管你的订阅模板把策略组叫 `🚀 节点选择` 还是 `🐟 漏网之鱼`，都不会出现 `policy not found`。
 
-**这个组名写在 `sources.json` 里，不写在模块里**：
+能做到这一点是因为 OpenClash 端**只做广告拦截**，不再重复下发「国内直连」和「走代理」两类规则——那两件事你订阅自带的 `GeoSite(cn)` / `Custom_Direct_Domain` / `Custom_Proxy_Domain` 已经在做了。
 
-```json
-"policyMap": {
-  "openclash": { "PROXY": "🚀 手动选择", "DIRECT": "DIRECT", "REJECT": "REJECT" }
-}
-```
+### 为什么 OpenClash 端只有 1.7 万条，而 FlClash 有 48 万条
 
-当前值是 `🚀 手动选择`。**如果你 OpenClash 的「策略组」页面里组名不是这个，把 JSON 里那个值改掉，push 后 CI 会自动重建**——不要手改 `module.conf`，每次构建都会覆盖。
+**这是实测得出的，不是保守估计。** 48 万条规则（21 个 provider）加载到路由器上，内核会在启动「第五步」之后卡死：
 
-为什么必须配置：OpenClash 的策略组名由订阅模板决定（`🚀 节点选择` / `🐟 漏网之鱼` / `🎯 全球直连` …），每套模板都不一样。规则里写死一个不存在的组名，内核会报 `policy not found`、**整份配置拒绝加载**。所以生成器做了降级：`policyMap.openclash.PROXY` 为空或还是占位符时，这 3 条会自动被注释掉，配置仍能正常加载。
+| 时间 | 覆写模块 | 结果 |
+|---|---|---|
+| 16:17:42 | 开 | 停在第五步，**35 分钟没有第六步**，「内核状态检查」始终不出现 |
+| 16:52:46 | 关 | 16:52:58 启动成功，**全程 12 秒** |
+
+关掉后 12 秒起来，带上是 35 分钟起不来，差别只有那批规则。
+
+所以 OpenClash 端在 `sources.json` 里给三个大表标了 `"openclash": false`：
+
+| 源 | 条数 | 为什么不进 OpenClash |
+|---|---|---|
+| `Reject_Rule` | 304969 | 太重。改用 4 个小广告表合计 1.7 万条替代 |
+| `Direct_Rule` | 110580 | 订阅自带 `GeoSite(cn)`，日志实测 `www.baidu.com → GeoSite(cn) → 🎯 全球直连` |
+| `Proxy_Rule` | 35083 | 订阅自带 `Custom_Proxy_Domain` |
+
+**这三行只影响 OpenClash。** FlClash 和 Loon 端仍然是全量，因为电脑和手机扛得住。
+
+想让路由器也用全量广告表（需要 256MB 以上可用内存），把 `sources.json` 里 `Reject_Rule` 的 `"openclash": false` 删掉即可。
 
 ### 一个需要注意的优先级副作用
 
@@ -170,25 +183,29 @@ https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/ma
 | 写法 | 语义 | 用途 |
 |---|---|---|
 | `rule-providers:` | 哈希递归合并 | 追加 21 个规则集，不动订阅自带的部分 |
-| `+rules:` | **数组前置插入** | 把 33 条规则插到订阅规则**前面**，保证优先匹配 |
+| `+rules:` | **数组前置插入** | 把 24 条规则插到订阅规则**前面**，保证优先匹配 |
 | `dns.fake-ip-filter+:` | 数组末尾追加 | 内网域名不走 fake-ip |
 | `tun.route-exclude-address+:` | 数组末尾追加 | 组网网段不进 TUN |
 
-生效的 33 条 = 12 条内网兜底 + 21 条 RULE-SET（4 个关键词表 + 10 个域名表 + 7 个 IP 表），规则内容与 FlClash 端同源，同一个 `sources.json`、同一个顺序（`guards → KW → domain → IP`）。
+生效的 24 条 = 12 条内网兜底 + 12 条 RULE-SET（1 个关键词表 + 5 个域名表 + 4 个 IP 表），合计约 1.7 万条，12 个 provider。
 
 生成器自带自检：每条 `RULE-SET` 引用的 provider 必须在同一文件里定义过，否则构建直接失败。
 
-### 和 FlClash 版唯一的差别
+### 和 FlClash 版的差别
 
-**没有 `GEOIP,CN,DIRECT`**
+| 项 | FlClash | OpenClash |
+|---|---|---|
+| 规则量 | 48 万条 / 21 provider | **1.7 万条 / 12 provider** |
+| 广告拦截 | 5 张表（含 30 万条 Reject_Rule） | 4 张小表（不含 Reject_Rule） |
+| 国内直连 | `Direct_Rule` 11 万条 | 订阅自带 `GeoSite(cn)` |
+| 走代理 | `Proxy_Rule` 3.5 万条 → `节点选择` | 订阅自带 `Custom_Proxy_Domain` |
+| `GEOIP,CN,DIRECT` | 有（末尾兜底） | **无** |
 
-FlClash 脚本里它是末尾的兜底规则。但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。OpenClash 一般自带国内直连兜底，所以省掉。
-
-如果确认配置里没有国内直连规则，在模块的 `+rules` 块末尾手动补一条即可。
+**为什么 OpenClash 不要 `GEOIP,CN,DIRECT`**：FlClash 里它是末尾兜底，但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。你订阅自带 `GeoSite(cn)`，所以省掉。
 
 ### 规则文件由谁下载
 
-路由器的 mihomo 内核**直接出网**拉规则文件，不走代理，所以模块里 21 个 provider 的 `url` 指向 `cdn.jsdelivr.net`（国内可直连），而不是 gh-proxy。这和 FlClash 端的逻辑一致：入口文件走代理可达的地址，规则文件走内核可直连的地址。
+路由器的 mihomo 内核**直接出网**拉规则文件，不走代理，所以模块里 12 个 provider 的 `url` 指向 `cdn.jsdelivr.net`（国内可直连），而不是 gh-proxy。这和 FlClash 端的逻辑一致：入口文件走代理可达的地址，规则文件走内核可直连的地址。
 
 ## 规则源
 
@@ -196,7 +213,7 @@ FlClash 脚本里它是末尾的兜底规则。但 OpenClash 是往订阅规则*
 
 | # | 名称 | 策略 | 域名 | IP | 关键词 | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `Reject_Rule` | REJECT | 304969 | 490 | 278 | 综合广告/跟踪拦截，最大的一张 |
+| 1 | `Reject_Rule` | REJECT | 304969 | 490 | 278 | 综合广告/跟踪拦截，最大的一张。**不进 OpenClash**（太重，实测卡死） |
 | 2 | `AdBlock` | REJECT | 1212 | 10 | — | dler-io 广告表 |
 | 3 | `adrules` | REJECT | 15101 | — | — | adrules.top，与 #1 高度重合，去重后仅剩独有部分 |
 | 4 | `rejectAd` | REJECT | 597 | 7 | 13 | 奶思广告合集（APP/小程序广告） |
@@ -211,10 +228,16 @@ FlClash 脚本里它是末尾的兜底规则。但 OpenClash 是往订阅规则*
 | 13 | `WeChat` | DIRECT | — | — | — | 仅 Loon |
 | 14 | `Tencent` | DIRECT | — | — | — | 仅 Loon |
 | 15 | `TestFlight` | DIRECT | — | — | — | 仅 Loon |
-| 16 | `Direct_Rule` | DIRECT | 110580 | 12557 | 13 | 国内直连主表 |
-| 17 | `Proxy_Rule` | PROXY | 35083 | 1014 | 55 | 需要走代理的域名 |
+| 16 | `Direct_Rule` | DIRECT | 110580 | 12557 | 13 | 国内直连主表。**不进 OpenClash**（订阅自带 `GeoSite(cn)`） |
+| 17 | `Proxy_Rule` | PROXY | 35083 | 1014 | 55 | 需要走代理的域名。**不进 OpenClash**（订阅自带 `Custom_Proxy_Domain`） |
 
-`—` 表示该表不含此类规则。**FlClash 侧**合计 **482072 条**（域名 467600 / IP 14113 / 关键词 359），生成 **21 个 provider / 35 条规则**；**Loon 侧 16 条 RULE-SET**（含 7 个 kelee 表）。
+`—` 表示该表不含此类规则。三端最终产出：
+
+| 端 | 总条数 | provider | 规则 |
+|---|---|---|---|
+| FlClash | 482072 | 21 | 35 |
+| Loon | — | 16 个上游直链 | 16 条 RULE-SET |
+| **OpenClash** | **约 1.7 万** | **12** | **24** |
 
 标注「仅 Loon」的 7 个表在 `sources.json` 里写了 `"flclash": false`。生成器**不会去下载它们**，只把链接写进 `loon.conf`。
 
