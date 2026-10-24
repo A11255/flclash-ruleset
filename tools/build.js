@@ -246,23 +246,12 @@ function main(config) {
 function buildOpenClash(sets) {
   const L = [];
 
-  // ── 模块元信息：添加模块时 OpenClash 会读取这些注释自动回填表单 ──
-  // 规范见官方 default：luci-app-openclash/root/etc/openclash/overwrite/default
-  L.push('#!NAME=规则中心 · OpenClash');
-  L.push('#!DESC=广告拦截 + 内网/组网直连 + 国内直连兜底。规则文件由 CDN 下发，自动跟随上游更新。');
-  L.push('#!CONFIG=all');
-  L.push('#!CRON=0 4 * * *');
-  L.push('');
-
-  // ── [General]：只覆盖必要的几项，其余保持 Web UI 里的设置 ──
-  L.push('[General]');
-  L.push('# 显式指定 WAN 区域名，修复「设置仅允许内网功能失败，无法获取 IPv4 的 WAN 接口名称」');
-  L.push('INTRANET_ALLOWED_WAN_NAME = wan');
-  L.push('# 域名嗅探：实测加上它会导致内核启动卡在第五步（16:13 / 16:17 两次失败），已停用。');
-  L.push('# 想启用就删掉下面这行的 # 号。你的订阅已有 GeoSite(cn) 和 Custom_* 规则，不依赖嗅探。');
-  L.push('# ENABLE_META_SNIFFER = 1');
-  L.push('# 本模块内容更新（CRON 拉到新版）后自动重启插件，否则新规则不会加载');
-  L.push('RESTART = true');
+  // ── 文件形态：纯 [YAML]，无 #! 元信息、无 [General] ──
+  // 对齐唯一一次成功启动（15:52）的形态。实测带 [General] 的三次（16:13/16:17/17:17）
+  // 全部卡在「第五步」且 0 个 provider 活动。
+  // #! 元信息你这边不被识别（模块名一直显示 module.conf），所以 CONFIG/CRON 请在界面上手填。
+  L.push('# 纯 YAML 覆写模块：不加 [General]（会干扰启动），不加 #! 元信息（不被识别）。');
+  L.push('# 匹配配置文件请在界面上选 all；更新时间请手动填 0 4 * * *。');
   L.push('');
 
   L.push('[YAML]');
