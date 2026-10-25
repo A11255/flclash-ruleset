@@ -103,112 +103,88 @@ https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/openclash/module.co
 
 > 改内容、切开关、新建模块之后都必须**重启插件**，不是 `reload`。覆写模块只在 `start_service` 里解析。
 
-### 模块形态：纯 YAML，零 provider
+### 模块形态：小模块 + `.mrs` 规则集
 
-整个文件只有一个 `[YAML]` 段，**所有规则直接写在 `+rules:` 里，不下载任何外部文件**：
+这是按 [`Aethersailor/Custom_OpenClash_Rules`](https://github.com/Aethersailor/Custom_OpenClash_Rules) 的范式重做的。核心原则只有一条：
 
-| 组成 | 条数 |
-|---|---|
-| 广告域名 `DOMAIN-SUFFIX` | 16968 |
-| 广告关键词 `DOMAIN-KEYWORD` | 13 |
-| 广告 IP（v4 用 `IP-CIDR`，v6 用 `IP-CIDR6`） | 17 |
-| 内网 / 组网兜底 | 12 |
-| Apple 推送 / FCM / 系统更新直连 | 56 |
-| **合计** | **17045**（文件约 774 KB） |
+> **`[YAML]` 模块里只放 provider 定义和规则引用，绝不内联成千上万条规则。**
 
-广告内容来自 `AdBlock` + `adrules` + `rejectAd` + `Adblock4limbo` 四张表**全部条目**，已做跨表去重。
+模块本体 5.5 KB、15 个 provider、26 条规则。真正的规则内容在 `dist/mihomo/*.mrs`，由内核自己下载和加载。
 
-**为什么不用 `rule-providers`**：带 provider 的版本在你机器上稳定卡在启动「第五步」，内核 0 个 provider 活动。见下节实测记录。
+| | 早期做法（已废弃） | 现在 |
+|---|---|---|
+| 模块体积 | 792 KB（内联 17044 条） | **5.5 KB** |
+| 规则存放 | 全部塞进 `+rules` | `rule-providers` + `.mrs` |
+| 内核下载量 | 0（但配置巨大） | 3.06 MB |
+| 配置初始化耗时 | 数秒（Ruby 合并） | **7 ms**（本机实测） |
 
-**注意**：内联到 `rules` 里必须区分 `IP-CIDR` 和 `IP-CIDR6`。provider 版靠 `behavior: ipcidr` 自动识别 v4/v6，内联时不会——写错会让内核直接拒绝解析。
+### 为什么用 `.mrs` 而不是 `.yaml`
+
+`.mrs` 是 mihomo 的二进制规则集格式，用内核自带的 `convert-ruleset` 生成：
+
+```sh
+mihomo convert-ruleset domain yaml  dist/mihomo/Reject_Rule_Domain.yaml dist/mihomo/Reject_Rule_Domain.mrs
+mihomo convert-ruleset ipcidr yaml  dist/mihomo/Direct_Rule_IP.yaml      dist/mihomo/Direct_Rule_IP.mrs
+```
+
+本机实测（mihomo v1.19.18）：
+
+| 表 | yaml | mrs |
+|---|---|---|
+| `Reject_Rule_Domain` | 7.77 MB | **2.27 MB** |
+| `Direct_Rule_Domain` | 2.07 MB | 394 KB |
+| `Proxy_Rule_Domain` | 729 KB | 191 KB |
+| 17 张域名/IP 表合计 | 11.32 MB | **3.06 MB（省 72.9%）** |
+
+**`.mrs` 只支持 `domain` 和 `ipcidr`。** 关键词表（`*_KW`，`behavior: classical`）必须保留 `.yaml` + `format: yaml`——实测 `convert-ruleset classical` 会让内核直接 panic。好在 4 张关键词表总共才 10 KB。
+
+`format` 必须和文件扩展名严格一致，mihomo 不会按后缀猜。
+
+### 本机实测结果
+
+用 mihomo v1.19.18 加载这套配置（`type: file` 指向本地 mrs）：
+
+```
+Initial configuration complete, total time: 7ms
+15/15 provider 加载成功，合计 322,770 条规则，0 error / 0 warn
+  Reject_Rule      304969      adrules         15101
+  Reject_Rule_KW      278      rejectAd          597
+  AdBlock            1212      AdBlock_IP         10
+```
 
 ### 不需要配置任何策略组名
 
-模块里**没有一条规则引用自定义策略组**，全部使用 `DIRECT` / `REJECT` 两个内建出站。所以不管你的订阅模板把策略组叫 `🚀 节点选择` 还是 `🐟 漏网之鱼`，都不会出现 `policy not found`。
+规则只用 `DIRECT` / `REJECT` 两个内建出站，不引用任何自定义策略组。生成器做了降级：`sources.json` 里 `policyMap.openclash.PROXY` 缺失时，`PROXY` 类规则自动注释掉，配置仍能加载。
 
-能做到这一点是因为 OpenClash 端**只做广告拦截**，不再重复下发「国内直连」和「走代理」两类规则——那两件事你订阅自带的 `GeoSite(cn)` / `Custom_Direct_Domain` / `Custom_Proxy_Domain` 已经在做了。
-
-### 为什么弃用 rule-provider（完整排查记录）
-
-带 `rule-providers` 的版本在你机器上从来没起来过（除了一次）。四次失败表现完全一致：**卡在启动「第五步」，之后零日志，内核 0 个 provider 活动**。
-
-| 时间 | 模块内容 | provider 启动数 | 结果 |
-|---|---|---|---|
-| 15:52 | 18 条规则 / 21 provider | **30 个** | ✅ 唯一一次成功 |
-| 16:13 | 21 条 + `[General]` | 未知（日志截断） | ❌ 卡第五步 |
-| 16:17 | 21 条 + `[General]` | **0 个** | ❌ |
-| 17:17 | 12 provider + `[General]` | **0 个** | ❌ |
-| 17:44 | 12 provider，纯 YAML | **0 个** | ❌ |
-| 16:52 / 17:10 | **无模块** | 9 个（订阅自带） | ✅ 12 秒起来 |
-
-逐个排除的假设：
-
-| 假设 | 验证结果 |
-|---|---|
-| 内存不足 | ❌ N1 有 2GB，15:52 全量成功过 |
-| 策略组 `🚀 手动选择` 不存在 | ❌ 订阅自己的 `Custom_Proxy_Domain` 在用它，匹配正常 |
-| `ENABLE_META_SNIFFER = 1` | ❌ 去掉后照样卡 |
-| `[General]` 段 | ❌ 去掉后照样卡 |
-
-**唯一共同点就是 `rule-providers` 本身**，所以改成零 provider 的内联形态。这版把所有外部依赖（下载、文件路径、provider 解析）全部去掉，只剩纯文本规则。
+`Direct_Rule`（11 万条）和 `Proxy_Rule`（3.5 万条）在 `sources.json` 里标了 `"openclash": false`——**你的订阅自带 `GeoSite(cn)` / `Custom_Direct_Domain` / `Custom_Proxy_Domain`，这两张表是重复劳动**，而且靠 `+rules` 前置插入会抢在订阅自己的分流之前。
 
 ### 一个需要注意的优先级副作用
 
-`+rules` 是插到数组**开头**，所以我们的规则会排在你自己模板规则的前面（你的日志里是 `Custom_Direct_Domain` / `Custom_Proxy_Domain` / `Custom_Port_Direct` / `GeoSite(github)` / `Match`）。
+`+rules` 插到规则数组**最前面**，所以我们的规则会排在你订阅的 `Custom_Direct_Domain` / `Custom_Proxy_Domain` 之前。
 
-这意味着：
-
-- 广告表 `REJECT` 优先 → 这是想要的效果
-- **`Direct_Rule`（11 万条）会抢在 `Custom_Proxy_Domain` 之前** → 某个域名如果你模板里特意设成走代理，但它同时存在于 `Direct_Rule` 里，就会被改成直连
-
-如果遇到「某个网站本该走代理却直连了」，把模块里这三行注释掉即可（只保留广告拦截，直连交回你自己的模板）：
-
-```yaml
-#  - 'RULE-SET,Direct_Rule,DIRECT'
-#  - 'RULE-SET,Direct_Rule_IP,DIRECT,no-resolve'
-#  - 'RULE-SET,Direct_Rule_KW,DIRECT'
-```
+- 广告表 `REJECT` 抢先 → 这是你要的
+- 内网兜底和 Apple/FCM 直连抢先 → 无害
 
 ### 怎么确认生效
 
-重启后看这三处：
+重启后看三处：
 
-1. **插件日志**（运行状态页 → 日志 → 插件日志）没有 `parse error`，并且出现「启动成功」
-2. **内核日志**里出现 `match RuleSet(...)` 或 `match Match` 的行，说明内核在正常处理规则
-3. 打开一个广告域名（比如 `doubleclick.net`），内核日志应显示命中我们的规则并 `using REJECT`
+1. **插件日志**没有 `policy not found`、没有 `parse error`
+2. **内核日志**出现 `Start initial provider Reject_Rule`
+3. 仪表盘/内核日志里能看到 `match RuleSet(Reject_Rule) using REJECT`
 
-内联版没有 provider 名可查，判断规则是否加载要看 `config.yaml` 的 `rules` 段——在「配置文件」页面能看到，搜 `DOMAIN-SUFFIX` 应该有约 1.7 万条。
-
-### 模块做了什么
-
-`[YAML]` 段用的全是 OpenClash 覆写模块的操作符：
-
-| 写法 | 语义 | 用途 |
-|---|---|---|
-| `+rules:` | **数组前置插入** | 把 17045 条规则插到订阅规则**前面**，保证优先匹配 |
-
-就这一个操作符。模块里没有 `rule-providers`、没有 `dns` 段、没有 `tun` 段——把变量压到最少，只保留必要的那一项。
-
-内网/组网直连靠规则本身解决（`GEOIP,LAN` / `GEOIP,private` / 8 条私有网段），不依赖 `tun.route-exclude-address`。如果你的节点小宝（100.66.1.x）在路由器上还需要 TUN 层排除，那是 FlClash 那边的问题，路由器走的是 Redir/TProxy 模式，规则层 `IP-CIDR,100.64.0.0/10,DIRECT` 已经够了。
-
-### 和 FlClash 版的差别
-
-| 项 | FlClash | OpenClash |
-|---|---|---|
-| 形态 | JS 覆写脚本 + 21 个 rule-provider | **纯 YAML + 零 provider** |
-| 规则量 | 48 万条 | **17045 条** |
-| 广告来源 | 5 张表（含 30 万条 `Reject_Rule`） | 4 张表（不含 `Reject_Rule`） |
-| 国内直连 | `Direct_Rule` 11 万条 | 订阅自带 `GeoSite(cn)` |
-| 走代理 | `Proxy_Rule` 3.5 万条 → `节点选择` | 订阅自带 `Custom_Proxy_Domain` |
-| `GEOIP,CN,DIRECT` | 有（末尾兜底） | **无** |
-
-**为什么 OpenClash 不含 `Reject_Rule` 那 30 万条**：内联规则会全部展开成 `config.yaml` 的 `rules` 数组，内核要逐条解析成规则对象（不像 provider 那样走预编译的 payload）。30 万条内联会让配置文件膨胀到 10 MB 以上、解析时间从毫秒级变成分钟级。4 张小表合计 1.7 万条已覆盖主流广告。
-
-**为什么不要 `GEOIP,CN,DIRECT`**：FlClash 里它是末尾兜底，但 OpenClash 是往订阅规则**前面**插，带上它会抢在你订阅自己的分流规则之前把所有国内 IP 直连，可能破坏已有的流媒体分组。你订阅自带 `GeoSite(cn)`，所以省掉。
+如果内核日志连 `Start initial provider` 都没有，说明内核没起来，先查 `logread` 里的 `out of memory` / `killed process`。
 
 ### 规则文件由谁下载
 
-**不用下载了。** 内联版没有任何 `rule-providers`，所有规则都在 `module.conf` 这一个文件里，由 OpenClash 插件自身拉取（走系统网络，不经代理）。`sources.json` 里 `openclashInline: true` 控制这个形态，改成 `false` 就回到 provider 版。
+路由器的 mihomo 内核**直接出网**拉规则文件，不走代理，所以 provider 的 `url` 指向 `cdn.jsdelivr.net`（你那台路由器实测可直连；`fastly.jsdelivr.net` 超时，别用）。
+
+`interval`：域名表 1800 秒、IP 表 86400 秒，与上游项目一致。
+
+### CI 会自动生成 mrs
+
+`.github/workflows/build.yml` 会下载钉版本的 mihomo（`v1.19.18`，与上游项目一致），跑 `convert-ruleset`，把 `.mrs` 一起提交。**不要在本地手改 `dist/`，每次构建都会被覆盖。**
+
 
 ## 规则源
 

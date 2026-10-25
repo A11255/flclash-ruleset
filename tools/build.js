@@ -341,17 +341,22 @@ function buildOpenClash(sets) {
     if (s.u.openclash === false) continue;
     const prefix = s.u.name;
     const ents = [];
-    if (s.k.kw.size) ents.push({ n: prefix + '_KW', b: 'classical', f: prefix + '_KW.yaml' });
-    if (s.k.domain.size) ents.push({ n: prefix, b: 'domain', f: prefix + '_Domain.yaml' });
-    if (s.k.ip.size) ents.push({ n: prefix + '_IP', b: 'ipcidr', f: prefix + '_IP.yaml' });
+    // format 必须与文件扩展名严格一致，mihomo 不按后缀猜。
+    // .mrs 只支持 domain / ipcidr —— 实测 `convert-ruleset classical` 会让内核直接 panic，
+    // 所以关键词表保持 .yaml + format: yaml（总共才 10 KB）。
+    // 域名/IP 用 .mrs：Reject_Rule 7.7 MB → 2.27 MB，本机实测全量 11.3 MB → 3.06 MB，省 72.9%，
+    // 且内核直接读二进制、不再做 YAML 解析。
+    if (s.k.kw.size) ents.push({ n: prefix + '_KW', b: 'classical', f: prefix + '_KW.yaml', fmt: 'yaml', iv: 86400 });
+    if (s.k.domain.size) ents.push({ n: prefix, b: 'domain', f: prefix + '_Domain.mrs', fmt: 'mrs', iv: 1800 });
+    if (s.k.ip.size) ents.push({ n: prefix + '_IP', b: 'ipcidr', f: prefix + '_IP.mrs', fmt: 'mrs', iv: 86400 });
     for (const e of ents) {
       L.push('  ' + e.n + ':');
       L.push('    type: http');
       L.push('    behavior: ' + e.b);
-      L.push('    format: yaml');
+      L.push('    format: ' + e.fmt);
       L.push('    url: "' + CDN + '/dist/mihomo/' + e.f + '"');
       L.push('    path: ./providers/' + e.f);
-      L.push('    interval: 86400');
+      L.push('    interval: ' + e.iv);
     }
   }
   L.push('');

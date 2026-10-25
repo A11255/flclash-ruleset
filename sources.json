@@ -8,8 +8,7 @@
     {
       "name": "Reject_Rule",
       "url": "https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Reject_Rule/Reject_Rule.rule",
-      "policy": "REJECT",
-      "openclash": false
+      "policy": "REJECT"
     },
     {
       "name": "AdBlock",
@@ -161,5 +160,5 @@
     "GEOIP",
     "SRC-IP"
   ],
-  "openclashInline": true
+  "openclashInline": false
 }

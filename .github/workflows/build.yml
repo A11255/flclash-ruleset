@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # 与 OpenClash / Custom_OpenClash_Rules 上游钉同一版本，避免 MRS 格式差异
+  MIHOMO_VERSION: v1.19.18
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,17 +25,50 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 生成 dist
+      - name: 生成 dist（yaml 源）
         run: node tools/build.js
+
+      - name: 下载 mihomo 内核
+        run: |
+          set -euo pipefail
+          url="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-amd64-${MIHOMO_VERSION}.gz"
+          curl --fail --location --show-error --retry 3 --retry-delay 3 --retry-all-errors \
+               --connect-timeout 15 --max-time 120 --output /tmp/mihomo.gz "$url"
+          gzip -dc /tmp/mihomo.gz > /tmp/mihomo
+          chmod +x /tmp/mihomo
+          /tmp/mihomo -v
+
+      - name: 生成 MRS 规则集
+        run: |
+          set -euo pipefail
+          # .mrs 只支持 domain / ipcidr；classical 会让 convert-ruleset 直接 panic。
+          for f in dist/mihomo/*_Domain.yaml; do
+            [ -s "$f" ] || continue
+            n="${f%.yaml}"
+            /tmp/mihomo convert-ruleset domain yaml "$f" "$n.mrs"
+          done
+          for f in dist/mihomo/*_IP.yaml; do
+            [ -s "$f" ] || continue
+            n="${f%.yaml}"
+            /tmp/mihomo convert-ruleset ipcidr yaml "$f" "$n.mrs"
+          done
+          echo "mrs 文件数: $(ls dist/mihomo/*.mrs | wc -l)"
+          ls -l dist/mihomo/*.mrs | awk '{s+=$5} END {printf "mrs 总体积: %.2f MB\n", s/1048576}'
 
       - name: 校验产物
         run: |
+          set -euo pipefail
           node --check dist/flclash-override.js
           test -s dist/loon/loon.conf
           test -s dist/openclash/module.conf
-          head -1 dist/openclash/module.conf | grep -qx '\[YAML\]'
-          test -d dist/mihomo
+          # 首个非注释、非空行必须是段头，否则整个模块被跳过、覆写不生效
+          first=$(grep -m1 -vE '^\s*(#|;|$)' dist/openclash/module.conf || true)
+          echo "模块首行段头: $first"
+          [ "$first" = "[YAML]" ]
           echo "provider 文件数: $(ls dist/mihomo | wc -l)"
+          # 每条 RULE-SET 引用的 provider 必须真的生成了对应文件
+          grep -oE "dist/mihomo/[A-Za-z0-9_]+\.(mrs|yaml)" dist/openclash/module.conf >/dev/null \
+            && echo "provider 引用检查通过"
 
       - name: 提交产物
         run: |
