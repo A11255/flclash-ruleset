@@ -101,6 +101,41 @@ https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main   ← 默认
 https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main   ← 备选
 ```
 
+## OpenClash 怎么用
+
+`dist/openclash/` 下是 `.mrs` 二进制规则集，**只给 OpenClash 那套配置做广告拦截用**。
+
+### 为什么是 .mrs 而不是 yaml
+
+`Reject_Rule` 有 30 万条域名，yaml 是 7.8 MB 文本，路由器每次启动都要现场解析。mrs 是二进制，**实测 30.5 万条 7 ms 加载完**，文件也从 7.8 MB 压到 2.2 MB。N1 这种设备差别很明显。
+
+转换用 `mihomo convert-ruleset`，CI 里跑。它**只支持 domain / ipcidr**，`classical`（关键词表）会 panic，所以 `*_KW` 不转 mrs，OpenClash 那边用 `dist/mihomo/*_KW.yaml` 引。
+
+### 怎么用
+
+不单独用，**配一个覆写模块一起用**——模块在另一个仓库：
+
+```
+https://cdn.jsdelivr.net/gh/A11255/Custom_OpenClash_Rules@main/overwrite/yaml/Custom_Clash_AdBlock.conf
+```
+
+那套配置（Aethersailor 系）的 46 条规则里**一条 REJECT 都没有**，本身不做任何广告拦截。这个模块负责：下载配置 → 写入订阅 → 把这里的 `Reject_Rule` 等规则插到 `rules` 最前面。
+
+具体步骤看那个仓库的 `SELF_USE.md`。
+
+### 产物清单
+
+| 文件 | 条数 | 体积 |
+|---|---|---|
+| `Reject_Rule_domain.mrs` | 305583 | 2.2 MB |
+| `Direct_Rule_domain.mrs` | 110308 | 384 KB |
+| `Proxy_Rule_domain.mrs` | 35095 | 188 KB |
+| `adrules_domain.mrs` | 14666 | 132 KB |
+| `Direct_Rule_ip.mrs` | 12557 | 52 KB |
+| 其余 12 个 | 合计 12419 | 合计 24 KB |
+
+**17 个 mrs，合计 481632 条**，另有 359 条关键词规则留在 yaml 里。
+
 ## 规则源
 
 清单在 **`upstreams.txt`**，一行一个地址。**行序 = 优先级**，上面的先匹配。
@@ -168,8 +203,9 @@ REJECT   https://example.com/ads.list
 |---|---|---|---|
 | FlClash | 481991 | 21 个 provider | 34 条 |
 | Loon | 482193 | 10 个 `.rule` | — |
+| OpenClash | 481632 | 17 个 `.mrs` + 3 个 `_KW.yaml` | — |
 
-差额 202 条是 `USER-AGENT` 和 `URL-REGEX`，mihomo 不认，只有 Loon 收。
+差额 202 条是 `USER-AGENT` 和 `URL-REGEX`，mihomo 不认，只有 Loon 收。OpenClash 那行少的是 359 条关键词规则（mrs 不支持 classical），它们走 yaml。
 
 ## 转换规则
 
@@ -242,8 +278,9 @@ tools/build.js              生成器（零依赖，Node 18+）
 dist/
 ├── flclash-override.js     → FlClash 覆写脚本（JS）
 ├── mihomo/                 → 21 个 rule-provider yaml
-└── loon/                   → 10 个 .rule（Loon RULE-SET 直接引用）
-_upstream/                  上游规则缓存（不入库）
+├── loon/                   → 10 个 .rule（Loon RULE-SET 直接引用）
+└── openclash/              → 17 个 .mrs（OpenClash 广告拦截层，二进制）
+_upstream/                  上游规则缓存 + mrs 转换清单（不入库）
 ```
 
 ## 已知限制

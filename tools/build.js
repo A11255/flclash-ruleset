@@ -399,6 +399,43 @@ function buildLoonRules(groups) {
 }
 
 // ══════════════════════════════════════════════
+// OpenClash 用的 .mrs 二进制规则集
+//
+// 为什么不用 yaml：Reject_Rule 有 30 万条域名，yaml 是 7.8 MB 文本，路由器每次
+// 启动都要现场解析；mrs 是二进制，实测 32 万条 7 ms 加载完。N1 这种设备差别很明显。
+//
+// 为什么分两段：mihomo 的 convert-ruleset 只能转 domain / ipcidr（classical 会 panic），
+// 而本函数只负责「写输入文件 + 产出转换清单」。真正的转换由 CI 的 shell 步骤执行——
+// 沙箱里 node 的 spawn 会被拦，本地也跑不通，放在 shell 里两处都能用同一套逻辑。
+// ══════════════════════════════════════════════
+function prepareMrs(groups) {
+  const srcDir = path.join(CACHE, 'mrs-src');
+  const outDir = path.join(DIST, 'openclash');
+  ensure(srcDir);
+  ensure(outDir);
+
+  // 清掉上一轮的 mrs，避免改组名之后留下孤儿文件
+  for (const f of fs.readdirSync(outDir)) {
+    if (f.endsWith('.mrs')) fs.unlinkSync(path.join(outDir, f));
+  }
+
+  const todo = [];
+  for (const g of groups) {
+    for (const cls of ['domain', 'ip']) {
+      const set = g.k[cls];
+      if (!set.size) continue;
+      const inFile = path.join(srcDir, g.name + '_' + cls + '.yaml');
+      const outFile = path.join(outDir, g.name + '_' + cls + '.mrs');
+      fs.writeFileSync(inFile, yamlPayload(Array.from(set).sort()), 'utf8');
+      todo.push([cls === 'domain' ? 'domain' : 'ipcidr', inFile, outFile].join('\t'));
+    }
+  }
+
+  fs.writeFileSync(path.join(CACHE, 'mrs-todo.tsv'), todo.join('\n') + '\n', 'utf8');
+  return todo;
+}
+
+// ══════════════════════════════════════════════
 (async () => {
   ensure(DIST);
   const mihomoDir = path.join(DIST, 'mihomo');
@@ -512,6 +549,11 @@ function buildLoonRules(groups) {
   for (const s of loonStat) {
     console.log('  dist/loon/' + (s.name + '.rule').padEnd(24) + s.lines + ' 条（Loon RULE-SET 可直接引用）');
   }
+
+  const mrsTodo = prepareMrs(groups);
+  const mrsOut = fs.readdirSync(path.join(DIST, 'openclash')).filter(f => f.endsWith('.mrs')).length;
+  console.log('  dist/openclash/            ' + mrsOut + ' 个 .mrs（待转换 ' + mrsTodo.length + ' 个，' +
+    (mrsOut ? '已转换' : '本地未转换，CI 会跑 convert-ruleset') + '）');
 
   console.log('');
   console.log('  去重移除 ' + removed + ' 条重复项');

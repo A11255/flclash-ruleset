@@ -25,6 +25,32 @@ jobs:
       - name: 生成 dist
         run: node tools/build.js
 
+      - name: 下载 mihomo 内核
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/mihomo.gz \
+            https://github.com/MetaCubeX/mihomo/releases/download/v1.19.20/mihomo-linux-amd64-v1.19.20.gz
+          gunzip -f /tmp/mihomo.gz
+          chmod +x /tmp/mihomo
+          /tmp/mihomo -v
+
+      - name: 生成 .mrs 规则集
+        run: |
+          set -euo pipefail
+          # build.js 已把待转换的表和清单写进 _upstream/，这里只负责调内核
+          # convert-ruleset 只支持 domain / ipcidr，classical（关键词表）会 panic，
+          # 所以关键词规则不进 mrs，OpenClash 那边用 yaml 引。
+          n=0
+          while IFS=$'\t' read -r behavior src dst; do
+            [ -z "${behavior:-}" ] && continue
+            mkdir -p "$(dirname "$dst")"
+            /tmp/mihomo convert-ruleset "$behavior" yaml "$src" "$dst"
+            [ -s "$dst" ] || { echo "::error::转换失败 $dst"; exit 1; }
+            n=$((n+1))
+          done < _upstream/mrs-todo.tsv
+          echo "转换完成 $n 个 .mrs"
+          du -sh dist/openclash
+
       - name: 校验产物
         run: |
           set -euo pipefail
@@ -58,8 +84,18 @@ jobs:
           echo "Loon 规则集: $r 个"
           [ "$r" -ge 1 ]
 
-          # 只剩单端 + Loon 规则集，OpenClash 落户目录不应该再出现
-          [ ! -e dist/openclash ]
+          # OpenClash 的 .mrs：清单里每一个都要有产物，且 mrs 是二进制
+          # （首 4 字节不是 payload:，防止把 yaml 改名冒充）
+          m=$(ls dist/openclash/*.mrs 2>/dev/null | wc -l)
+          todo=$(grep -c . _upstream/mrs-todo.tsv || true)
+          echo "OpenClash .mrs: $m 个（清单 $todo 个）"
+          [ "$m" -eq "$todo" ]
+          for f in dist/openclash/*.mrs; do
+            [ -s "$f" ] || { echo "::error::$f 是空文件"; exit 1; }
+            head -c 7 "$f" | grep -q 'payload:' && { echo "::error::$f 不是 mrs，看起来是 yaml"; exit 1; }
+          done
+          echo "mrs 全部有效"
+
           echo "产物目录: $(ls dist | tr '\n' ' ')"
 
       - name: 提交产物
