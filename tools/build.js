@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * 规则中心 · 生成器
+ * 规则中心 · 生成器（FlClash 单端）
  *
  * 流程：
  *   1. 读 upstreams.txt（一行一个规则源地址）拉取规则文件
  *      （Loon .rule / Surge .list / kelee .lsr 三种格式都能吃）
  *   2. 自动分类成 domain / ipcidr / classical 三组，并按优先级跨规则集去重
- *   3. 生成 mihomo rule-provider yaml  →  dist/mihomo/
+ *   3. 生成 mihomo rule-provider yaml  →  dist/mihomo/*.yaml
  *   4. 生成 FlClash 覆写脚本           →  dist/flclash-override.js
- *   5. 生成 Loon 配置（直接引用上游原始链接）→  dist/loon/loon.conf
  *
  * 用法：
  *   node tools/build.js           有本地缓存就用缓存
@@ -58,20 +57,17 @@ function parseUpstreams(text, file) {
     if (!line) return;
 
     let url = null, policy = null, name = null;
-    const flags = {};
 
     for (const tok of line.split(/\s+/)) {
       if (/^https?:\/\//i.test(tok)) { url = tok; continue; }
       if (/^name=.+/i.test(tok)) { name = tok.slice(5); continue; }
-      const m = tok.match(/^(flclash|loon|openclash):(off|false|0)$/i);
-      if (m) { flags[m[1].toLowerCase()] = false; continue; }
       const up = tok.toUpperCase();
       if (POLICY_ALIAS[up] || up === 'REJECT' || up === 'DIRECT' || up === 'PROXY') {
         policy = POLICY_ALIAS[up] || up;
         continue;
       }
       throw new Error(file + ' 第 ' + no + ' 行无法识别：「' + tok + '」\n' +
-        '  允许的写法：REJECT/DIRECT/PROXY（或 R/D/P）、http(s) 地址、name=名字、flclash:off、loon:off、openclash:off');
+        '  允许的写法：REJECT/DIRECT/PROXY（或 R/D/P）、http(s) 地址、name=名字');
     }
 
     if (!url) {
@@ -95,9 +91,6 @@ function parseUpstreams(text, file) {
     }
 
     const e = { name: nm, url, policy };
-    for (const k of ['flclash', 'loon', 'openclash']) {
-      if (flags[k] === false) e[k] = false;
-    }
     out.push(e);
   });
 
@@ -222,7 +215,7 @@ function pm(target, policy) {
  * 支持两种写法：
  *   raw.githubusercontent.com/<u>/<r>/<b>/<p>
  *   github.com/<u>/<r>/raw/refs/heads/<b>/<p>  /  github.com/<u>/<r>/raw/<b>/<p>
- * iOS 上 Loon 直连 raw 经常超时，jsDelivr 国内可直连。
+ * 国内直连 raw.githubusercontent.com 不稳定，统一走 jsDelivr。下载失败时也会用它重试。
  */
 function toCdn(url) {
   let m = url.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
@@ -343,254 +336,6 @@ function main(config) {
 }
 
 // ══════════════════════════════════════════════
-// OpenClash 覆写模块（INI 三段格式，只有 [YAML] 段）
-// OpenClash 不认 FlClash 的 JS 覆写：它用的是「覆写模块」，
-// 通过 [YAML] 段的操作符合并进运行配置。
-//   +rules:            → 数组前置插入（优先匹配）
-//   rule-providers:    → 哈希递归合并
-//   dns.fake-ip-filter+ / tun.route-exclude-address+ → 数组追加
-// ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-// OpenClash 内联版（零 rule-provider）
-// 排查用：所有规则直接写进 +rules，不引用任何外部文件。
-// 若这版能启动而 provider 版不能，则问题锁定在 rule-provider 机制。
-// ══════════════════════════════════════════════
-function buildOpenClashInline(sets) {
-  const L = [];
-  L.push('# OpenClash 覆写模块（内联版 · 去广告拉满）');
-  L.push('# 零 rule-provider：不下载任何规则文件，规则全部写在本文件里。');
-  L.push('# 收录 AdBlock / adrules / rejectAd / Adblock4limbo 四张表的全部条目（已跨表去重）。');
-  L.push('# 自动生成，请勿手改。');
-  L.push('');
-  L.push('[YAML]');
-  L.push('# +rules = 插入到规则数组开头，所以这里的顺序就是优先级');
-  L.push('+rules:');
-
-  // ── 内网 / 组网兜底 ──
-  for (const g of src.guardRules || []) L.push("  - '" + g + "'");
-
-  const adSets = sets.filter(s => s.k && s.u.openclash !== false && s.u.policy === 'REJECT');
-
-  // ── 广告关键词（总量小，全收）──
-  let nk = 0;
-  for (const s of adSets) {
-    for (const kw of s.k.kw) {
-      L.push("  - '" + kw + ",REJECT'");
-      nk++;
-    }
-  }
-
-  // ── 广告域名（全收，不截断）──
-  let nd = 0;
-  for (const s of adSets) {
-    for (const d of s.k.domain) {
-      L.push("  - 'DOMAIN-SUFFIX," + d + ",REJECT'");
-      nd++;
-    }
-  }
-
-  // ── 广告 IP ──
-  // 内联到 rules 里必须区分 v4/v6：IPv6 要用 IP-CIDR6，写成 IP-CIDR 会让内核解析失败。
-  // （provider 版靠 behavior: ipcidr 自动识别，所以以前没暴露这个差异）
-  const ipRule = (cidr, policy) =>
-    (cidr.indexOf(':') >= 0 ? 'IP-CIDR6,' : 'IP-CIDR,') + cidr + ',' + policy + ',no-resolve';
-  let ni = 0;
-  for (const s of adSets) {
-    for (const ip of s.k.ip) {
-      L.push("  - '" + ipRule(ip, 'REJECT') + "'");
-      ni++;
-    }
-  }
-
-  // ── 系统服务直连（Apple 推送 / FCM / 系统更新，量很小，全收）──
-  let nc = 0;
-  for (const s of sets) {
-    if (!s.k || s.u.openclash === false || s.u.policy !== 'DIRECT') continue;
-    for (const kw of s.k.kw) { L.push("  - '" + kw + ",DIRECT'"); nc++; }
-    for (const d of s.k.domain) { L.push("  - 'DOMAIN-SUFFIX," + d + ",DIRECT'"); nc++; }
-    for (const ip of s.k.ip) { L.push("  - '" + ipRule(ip, 'DIRECT') + "'"); nc++; }
-  }
-  L.push('');
-
-  const dir = path.join(DIST, 'openclash');
-  ensure(dir);
-  fs.writeFileSync(path.join(dir, 'module.conf'), L.join('\n'), 'utf8');
-
-  const total = nk + nd + ni + nc;
-  console.log('    内联构成: 关键词 ' + nk + ' / 域名 ' + nd + ' / IP ' + ni + ' / 直连 ' + nc + ' = ' + total + ' 条');
-  return { rules: total, providers: 0 };
-}
-
-function buildOpenClash(sets) {
-  const L = [];
-
-  // ── 文件形态：纯 [YAML]，无 #! 元信息、无 [General] ──
-  // 对齐唯一一次成功启动（15:52）的形态。实测带 [General] 的三次（16:13/16:17/17:17）
-  // 全部卡在「第五步」且 0 个 provider 活动。
-  // #! 元信息你这边不被识别（模块名一直显示 module.conf），所以 CONFIG/CRON 请在界面上手填。
-  L.push('# 纯 YAML 覆写模块：不加 [General]（会干扰启动），不加 #! 元信息（不被识别）。');
-  L.push('# 匹配配置文件请在界面上选 all；更新时间请手动填 0 4 * * *。');
-  L.push('');
-
-  L.push('[YAML]');
-  L.push('# ============================================================');
-  L.push('# 规则中心 · OpenClash 端');
-  L.push('# 自动生成，请勿手改。改 sources.json 后由 CI 重建。');
-  L.push('# 与 FlClash / Loon 端各自独立：这里用的是 OpenClash 的策略组与插件能力。');
-  L.push('# ============================================================');
-  L.push('');
-
-  // ── rule-providers：哈希递归合并，不覆盖订阅自带的部分 ──
-  // openclash:false 的源整体跳过（大表由订阅自带的 GeoSite(cn) / Custom_* 接管）
-  L.push('rule-providers:');
-  for (const s of sets) {
-    if (!s.k) continue;
-    if (s.u.openclash === false) continue;
-    const prefix = s.u.name;
-    const ents = [];
-    // format 必须与文件扩展名严格一致，mihomo 不按后缀猜。
-    // .mrs 只支持 domain / ipcidr —— 实测 `convert-ruleset classical` 会让内核直接 panic，
-    // 所以关键词表保持 .yaml + format: yaml（总共才 10 KB）。
-    // 域名/IP 用 .mrs：Reject_Rule 7.7 MB → 2.27 MB，本机实测全量 11.3 MB → 3.06 MB，省 72.9%，
-    // 且内核直接读二进制、不再做 YAML 解析。
-    if (s.k.kw.size) ents.push({ n: prefix + '_KW', b: 'classical', f: prefix + '_KW.yaml', fmt: 'yaml', iv: 86400 });
-    if (s.k.domain.size) ents.push({ n: prefix, b: 'domain', f: prefix + '_Domain.mrs', fmt: 'mrs', iv: 1800 });
-    if (s.k.ip.size) ents.push({ n: prefix + '_IP', b: 'ipcidr', f: prefix + '_IP.mrs', fmt: 'mrs', iv: 86400 });
-    for (const e of ents) {
-      L.push('  ' + e.n + ':');
-      L.push('    type: http');
-      L.push('    behavior: ' + e.b);
-      L.push('    format: ' + e.fmt);
-      L.push('    url: "' + CDN + '/dist/mihomo/' + e.f + '"');
-      L.push('    path: ./providers/' + e.f);
-      L.push('    interval: ' + e.iv);
-    }
-  }
-  L.push('');
-
-  // ── 规则：前置插入，保证在订阅规则之前、MATCH 之前生效 ──
-  // DIRECT / REJECT 是内建出站，永远安全；PROXY 必须映射到路由器上真实存在的组名
-  // （sources.json → policyMap.openclash.PROXY）。名字不存在时内核报 policy not found、
-  // 整份配置拒绝加载，所以映射缺失时自动降级为「注释掉」而不是直接写进配置。
-  const ocProxy = pm('openclash', 'PROXY');
-  const proxyUsable = !!ocProxy && ocProxy !== 'PROXY' && !ocProxy.includes('你的代理策略组');
-  // 本端是否还有需要策略组的源（大表全部 openclash:false 后通常没有了）
-  const ocHasProxySrc = sets.some(s => s.k && s.u.openclash !== false && s.u.policy === 'PROXY');
-
-  L.push('# +rules = 插入到数组开头，所以这里的顺序就是优先级');
-  if (!ocHasProxySrc) {
-    L.push('# 本模块只做三件事：广告拦截 + 内网/组网直连 + 系统服务(Apple/FCM)直连。');
-    L.push('# 国内域名直连与走代理交给订阅自带的 GeoSite(cn) / Custom_Direct_Domain / Custom_Proxy_Domain，');
-    L.push('# 不再重复下发 11 万条域名表——那会让路由器在启动第五步卡死（实测 35 分钟起不来）。');
-  } else if (proxyUsable) {
-    L.push('# DIRECT / REJECT 为内建出站；PROXY 映射到策略组「' + ocProxy + '」');
-    L.push('# 若该组名在你的配置里不存在，改为 sources.json → policyMap.openclash.PROXY，重新构建');
-  } else {
-    L.push('# ⚠ policyMap.openclash.PROXY 未配置，PROXY 类规则已自动注释（见文末）');
-  }
-  L.push('+rules:');
-  for (const g of src.guardRules || []) L.push("  - '" + g + "'");
-
-  // 按 KW → domain → IP 三段输出，段内保持 sources.json 的数组顺序，
-  // 与 FlClash / Loon 两端完全同源。PROXY 类只在其组名可用时就地输出，
-  // 否则收集起来在末尾统一注释（保住顺序语义，不因降级而错位）。
-  const fallback = [];
-  for (const cls of ['kw', 'domain', 'ip']) {
-    for (const s of sets) {
-      if (!s.k || !s.k[cls].size) continue;
-      if (s.u.openclash === false) continue;
-      const p = pm('openclash', s.u.policy);
-      const suffix = cls === 'ip' ? ',no-resolve' : '';
-      const nm = s.u.name + (cls === 'kw' ? '_KW' : cls === 'ip' ? '_IP' : '');
-      const line = 'RULE-SET,' + nm + ',' + p + suffix;
-      if (s.u.policy === 'PROXY' && !proxyUsable) {
-        fallback.push(line);
-        continue;
-      }
-      L.push("  - '" + line + "'");
-    }
-  }
-
-  if (fallback.length) {
-    L.push('');
-    L.push('# ── 以下需要自定义策略组，因未配置组名而默认不启用 ────────────');
-    L.push('# 要启用，改 sources.json → policyMap.openclash.PROXY 为真实组名后重新构建；');
-    L.push('# 不要手改本文件，CI 每次都会重新生成。');
-    for (const r of fallback) L.push("#  - '" + r + "'");
-  }
-  L.push('');
-
-  // ── DNS：内网域名不进 fake-ip，否则浏览器输内网主机名会拿到假 IP ──
-  if ((src.fakeIpFilterExtra || []).length) {
-    L.push('dns:');
-    L.push('  # 内网域名走真实解析，否则输入路由后台/NAS 主机名会拿到 198.18.x.x');
-    L.push('  fake-ip-filter+:');
-    for (const f of src.fakeIpFilterExtra) L.push("    - '" + f + "'");
-    L.push('');
-  }
-
-  // ── TUN：组网网段根本不进 TUN ──
-  if ((src.tunExcludeExtra || []).length) {
-    L.push('tun:');
-    L.push('  route-exclude-address+:');
-    for (const t of src.tunExcludeExtra) L.push("    - '" + t + "'");
-    L.push('');
-  }
-
-  const dir = path.join(DIST, 'openclash');
-  ensure(dir);
-
-  // 自检：每条 RULE-SET 引用的 provider 必须在同一文件里定义过，否则内核加载失败
-  const defs = new Set();
-  for (const ln of L) {
-    const m = ln.match(/^  ([A-Za-z0-9_]+):$/);
-    if (m) defs.add(m[1]);
-  }
-  const refs = L.map(x => x.match(/^  - 'RULE-SET,([^,]+),/)).filter(Boolean).map(m => m[1]);
-  const miss = refs.filter(n => !defs.has(n));
-  if (miss.length) throw new Error('OpenClash 模块自检失败，未定义的 provider: ' + miss.join(', '));
-
-  fs.writeFileSync(path.join(dir, 'module.conf'), L.join('\n'), 'utf8');
-  return { rules: refs.length, providers: defs.size };
-}
-
-// ══════════════════════════════════════════════
-// Loon 配置（直接引用上游原始链接，不转换）
-// ══════════════════════════════════════════════
-function buildLoon(sets) {
-  const guard = (src.guardRules || []).filter(g =>
-    g.indexOf('GEOIP,LAN') !== 0 && g.indexOf('GEOIP,private') !== 0);
-
-  const c = [];
-  c.push('[General]');
-  c.push('internet-test-url = http://www.gstatic.com/generate_204');
-  c.push('proxy-test-url = http://www.gstatic.com/generate_204');
-  c.push('test-timeout = 5');
-  c.push('geoip = true');
-  c.push('');
-  c.push('[Proxy Group]');
-  c.push('节点选择 = select,PROXY,DIRECT');
-  c.push('');
-  c.push('[Rule]');
-  c.push('# 上游规则走 jsDelivr 镜像，避免 iOS 直连 raw.githubusercontent.com 超时');
-  for (const g of guard) c.push(g);
-  let n = 0;
-  for (const s of sets) {
-    if (s.u.loon === false) continue;
-    c.push('RULE-SET,' + toCdn(s.u.url) + ',' + pm('loon', s.u.policy));
-    n++;
-  }
-  for (const t of src.tailRules || []) c.push(t);
-  c.push('FINAL,节点选择');
-  c.push('');
-
-  const dir = path.join(DIST, 'loon');
-  ensure(dir);
-  fs.writeFileSync(path.join(dir, 'loon.conf'), c.join('\n'), 'utf8');
-  return n;
-}
-
-// ══════════════════════════════════════════════
 (async () => {
   ensure(DIST);
   const mihomoDir = path.join(DIST, 'mihomo');
@@ -599,13 +344,6 @@ function buildLoon(sets) {
   const sets = [];
   console.log('=== 拉取并转换上游规则 ===');
   for (const u of src.upstream) {
-    // flclash:false 的源只写进 loon.conf，不下载、不转换。
-    // 用于那些访问端能直连、但本机/CI 拿不到的源（如 kelee.one 被 Cloudflare 封机房 IP）。
-    if (u.flclash === false) {
-      sets.push({ u, k: null, loonOnly: true });
-      console.log('  ' + (u.name + ' (' + u.policy + ')').padEnd(26) + '仅 Loon，跳过下载');
-      continue;
-    }
     const text = await loadRemote(u);
     const k = classify(text);
     sets.push({ u, k });
@@ -634,7 +372,7 @@ function buildLoon(sets) {
   let totalD = 0, totalI = 0, totalK = 0;
   for (const s of sets) {
     const { u, k } = s;
-    if (!k) continue;   // 仅 Loon 的源，没有可转换内容
+    if (!k) continue;   // 防御：理论上每个源都有分类结果
     const out = [];
     if (k.domain.size) {
       fs.writeFileSync(path.join(mihomoDir, u.name + '_Domain.yaml'),
@@ -666,16 +404,8 @@ function buildLoon(sets) {
   console.log('');
   console.log('=== 生成产物 ===');
   const f = buildFlClash(sets);
-  const l = buildLoon(sets);
-  // openclashInline:true 时走零 provider 的内联版（排查 provider 机制问题用）
-  const oc = src.openclashInline ? buildOpenClashInline(sets) : buildOpenClash(sets);
-  console.log('  dist/flclash-override.js   provider ' + f.providers + ' / 规则 ' + f.rules);
-  console.log('  dist/loon/loon.conf        引用 ' + l + ' 个上游规则集');
-  if (src.openclashInline) {
-    console.log('  dist/openclash/module.conf  【内联版】零 provider / 内嵌规则 ' + oc.rules + ' 条');
-  } else {
-    console.log('  dist/openclash/module.conf  provider ' + oc.providers + ' / RULE-SET ' + oc.rules + ' 条');
-  }
+  console.log('  dist/flclash-override.js   provider ' + f.providers + ' / 规则 ' + f.rules + ' 条');
+  console.log('  dist/mihomo/               ' + fs.readdirSync(mihomoDir).length + ' 个 rule-provider yaml');
   console.log('');
   console.log('  去重移除 ' + removed + ' 条重复项');
   console.log('  合计 domain=' + totalD + '  ip=' + totalI + '  kw=' + totalK +

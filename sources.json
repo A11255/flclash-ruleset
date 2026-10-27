@@ -1,9 +1,8 @@
 {
-  "_comment": "规则中心 · 全局参数。规则源清单在 upstreams.txt（一行一个地址，加减规则只改那个文件）。",
-  "version": 5,
+  "_comment": "规则中心 · 全局参数（FlClash 单端）。规则源清单在 upstreams.txt，加减规则只改那个文件。",
+  "version": 6,
   "cdnBase": "https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main",
-  "_upstreamComment": "规则源已迁到 upstreams.txt。本文件不再保存 upstream 数组，避免两份真相。数组顺序即优先级，由 upstreams.txt 的行序决定。",
-  "_openclashComment": "OpenClash 端的三张大表（Direct_Rule / Proxy_Rule / Adblock4limbo 的部分）用 openclash:off 排除，原因：路由器加载 48 万条规则会在第五步卡死。openclash:off 写在 upstreams.txt 对应行的行尾。",
+  "_upstreamComment": "规则源在 upstreams.txt，本文件不保存源列表，避免两份真相。行序即优先级。",
   "guardRules": [
     "GEOIP,LAN,DIRECT,no-resolve",
     "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
@@ -32,20 +31,10 @@
   "tunExcludeExtra": [
     "100.64.0.0/10"
   ],
-  "_policyMapComment": "各端用自己的出站习惯，互不通用。flclash 用订阅里的策略组名（已在 config.yaml 中确认存在）；loon 用内建 PROXY，指向当前选中节点，不依赖任何自定义组名；openclash 必须填路由器上真实存在的组名，改订阅模板后要同步改这里。",
+  "_policyMapComment": "PROXY 必须填订阅里真实存在的策略组名。改订阅模板后要同步改这里，否则覆写脚本会把这个组名当不存在、退回第一个可用组。",
   "policyMap": {
     "flclash": {
       "PROXY": "节点选择",
-      "DIRECT": "DIRECT",
-      "REJECT": "REJECT"
-    },
-    "loon": {
-      "PROXY": "PROXY",
-      "DIRECT": "DIRECT",
-      "REJECT": "REJECT"
-    },
-    "openclash": {
-      "PROXY": "🚀 手动选择",
       "DIRECT": "DIRECT",
       "REJECT": "REJECT"
     }
@@ -61,6 +50,5 @@
     "PROCESS-NAME",
     "GEOIP",
     "SRC-IP"
-  ],
-  "openclashInline": false
+  ]
 }
