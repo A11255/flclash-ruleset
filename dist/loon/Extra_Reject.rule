@@ -1,0 +1,11 @@
+# NAME: Extra_Reject
+# POLICY: REJECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
+# SOURCES: sources.json:extraRejectDomains
+# TOTAL: 5
+# 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Extra_Reject.rule,REJECT
+
+DOMAIN-SUFFIX,sentry-cdn.com
+DOMAIN-SUFFIX,swscan.apple.com
+DOMAIN-SUFFIX,updates-http.cdn-apple.com
+DOMAIN-SUFFIX,updates.apple.com
+DOMAIN-SUFFIX,updates.cdn-apple.com

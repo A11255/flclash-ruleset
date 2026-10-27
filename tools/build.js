@@ -503,6 +503,42 @@ function prepareMrs(groups) {
   }
   const groups = Array.from(groupMap.values());
 
+  // ── 手动补充的拦截项（sources.json 的 extraRejectDomains）──
+  // 单独成一组建在最前面，优先级最高。用途：补上游表没覆盖的域名（比如 sentry-cdn.com），
+  // 或者临时加自己的规则——不用为此新建一个规则源，也不用改 upstreams.txt。
+  // 裸域名会自动按后缀匹配（输出时加 +.），含 / 的按 CIDR 处理。
+  const extra = src.extraRejectDomains;
+  if (Array.isArray(extra) && extra.length) {
+    const dom = new Set(), cidr = new Set(), bad = [];
+    for (const raw of extra) {
+      let v = String(raw).trim().toLowerCase();
+      if (!v) continue;
+      if (v.includes('/')) {
+        if (CIDR_RE.test(v)) cidr.add(v);
+        else bad.push(raw);
+        continue;
+      }
+      v = v.replace(/^\+\./, '').replace(/^\.+/, '');
+      if (DOMAIN_RE.test(v)) dom.add(v);
+      else bad.push(raw);
+    }
+    if (bad.length) {
+      throw new Error('sources.json 的 extraRejectDomains 有 ' + bad.length +
+        ' 条不合法：「' + bad.join('」「') + '」\n' +
+        '  域名只允许字母数字 . - _ *，CIDR 需要带 /前缀长度');
+    }
+    if (dom.size || cidr.size) {
+      groups.unshift({
+        name: 'Extra_Reject',
+        policy: 'REJECT',
+        k: { domain: dom, ip: cidr, kw: new Set(), extras: new Set() },
+        members: ['sources.json:extraRejectDomains'],
+        dropped: {},
+        bad: { domain: 0, ip: 0 },
+      });
+    }
+  }
+
   // ── 跨规则集去重 ──
   // mihomo 按 RULES 顺序匹配，先命中先生效。同一个域名/网段在后面的规则集里
   // 再出现一次不会有任何行为差异，只会多占一份内存。这里按「先出现者保留」去重。

@@ -3,6 +3,14 @@
   "version": 7,
   "cdnBase": "https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main",
   "_upstreamComment": "规则源在 upstreams.txt，本文件不保存源列表，避免两份真相。行序即优先级。",
+  "_extraRejectComment": "手动补充的拦截项，单独成一组 Extra_Reject，排在所有规则源之前（优先级最高）。填裸域名即可，生成时自动加 +. 做后缀匹配；含 / 的按 CIDR 处理。改动这里后 CI 会自动重建。",
+  "extraRejectDomains": [
+    "sentry-cdn.com",
+    "updates.cdn-apple.com",
+    "updates-http.cdn-apple.com",
+    "updates.apple.com",
+    "swscan.apple.com"
+  ],
   "guardRules": [
     "GEOIP,LAN,DIRECT,no-resolve",
     "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",

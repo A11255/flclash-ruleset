@@ -54,6 +54,14 @@ var PROVIDERS = {
     interval: UPDATE_INTERVAL,
     path: "./providers/" + "Proxy_Rule_KW.yaml"
   },
+  Extra_Reject: {
+    type: "http",
+    behavior: "domain",
+    format: "yaml",
+    url: URL_BASE + "Extra_Reject_Domain.yaml",
+    interval: UPDATE_INTERVAL,
+    path: "./providers/" + "Extra_Reject_Domain.yaml"
+  },
   Reject_Rule: {
     type: "http",
     behavior: "domain",
@@ -208,6 +216,7 @@ var RULES = [
 "RULE-SET,rejectAd_KW,REJECT",
 "RULE-SET,Direct_Rule_KW,DIRECT",
 "RULE-SET,Proxy_Rule_KW,节点选择",
+"RULE-SET,Extra_Reject,REJECT",
 "RULE-SET,Reject_Rule,REJECT",
 "RULE-SET,AdBlock,REJECT",
 "RULE-SET,adrules,REJECT",

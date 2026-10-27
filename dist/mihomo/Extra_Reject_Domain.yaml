@@ -1,0 +1,6 @@
+payload:
+  - '+.sentry-cdn.com'
+  - '+.swscan.apple.com'
+  - '+.updates-http.cdn-apple.com'
+  - '+.updates.apple.com'
+  - '+.updates.cdn-apple.com'

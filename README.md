@@ -186,6 +186,7 @@ REJECT   https://example.com/ads.list
 
 | 组 | 策略 | 域名 | IP | 关键词 | 上游来源 |
 |---|---|---|---|---|---|
+| `Extra_Reject` | REJECT | 5 | — | — | `sources.json` 的 `extraRejectDomains`，手动补充，优先级最高 |
 | `Reject_Rule` | REJECT | 305583 | 490 | 278 | `Advertising` + `Advertising_Domain` + `Privacy` + `Privacy_Domain` |
 | `AdBlock` | REJECT | 1212 | 10 | — | dler-io 广告表 |
 | `adrules` | REJECT | 14666 | — | — | adrules.top，与 `Reject_Rule` 高度重合，去重后仅剩独有部分 |
@@ -201,11 +202,39 @@ REJECT   https://example.com/ads.list
 
 | 端 | 总条数 | provider / 文件 | 覆写规则 |
 |---|---|---|---|
-| FlClash | 481991 | 21 个 provider | 34 条 |
-| Loon | 482193 | 10 个 `.rule` | — |
-| OpenClash | 481632 | 17 个 `.mrs` + 3 个 `_KW.yaml` | — |
+| FlClash | 481995 | 22 个 provider | 35 条 |
+| Loon | 482197 | 11 个 `.rule` | — |
+| OpenClash | 481636 | 18 个 `.mrs` + 3 个 `_KW.yaml` | — |
 
 差额 202 条是 `USER-AGENT` 和 `URL-REGEX`，mihomo 不认，只有 Loon 收。OpenClash 那行少的是 359 条关键词规则（mrs 不支持 classical），它们走 yaml。
+
+### 补充自定义拦截项
+
+上游表没覆盖、又不值得为它新建一个规则源的域名，直接加在 `sources.json`：
+
+```json
+"extraRejectDomains": [
+  "sentry-cdn.com",
+  "updates.cdn-apple.com"
+]
+```
+
+规则：
+
+- 单独成一组 `Extra_Reject`，**排在所有规则源之前**，优先级最高
+- 填裸域名即可，生成时自动加 `+.` 做后缀匹配，子域名一起拦
+- 含 `/` 的按 CIDR 处理，进 IP 表（如 `1.2.3.0/24`）
+- 写错会直接抛错并指出是哪一条，不会静默跳过
+- 三端都产出：FlClash 的 `Extra_Reject` provider、Loon 的 `Extra_Reject.rule`、OpenClash 的 `Extra_Reject_domain.mrs`
+
+当前放了 5 条：
+
+| 域名 | 为什么 |
+|---|---|
+| `sentry-cdn.com` | 错误监控。原来被 `Proxy_Rule` 命中走了代理，白白绕一圈还浪费流量 |
+| `updates.cdn-apple.com`、`updates-http.cdn-apple.com`、`updates.apple.com`、`swscan.apple.com` | Apple 系统更新下载侧。配合 `apple_update` 那张表把自动升级彻底堵死 |
+
+> OpenClash 那套模块（`Custom_Clash_AdBlock.conf`）**故意没引用 `Extra_Reject`**——里面有 Apple 更新域名，路由器上一拦就是全家设备都升不了级，误伤面比单机大。想在 OpenClash 也生效，在模块 `[YAML]` 段自己加一个 provider 和一条规则即可。
 
 ## 转换规则
 
