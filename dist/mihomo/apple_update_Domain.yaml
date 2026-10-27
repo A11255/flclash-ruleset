@@ -1,6 +1,6 @@
 payload:
-  - 'appldnld.apple.com'
-  - 'gdmf.apple.com'
-  - 'mesu.apple.com'
-  - 'ns.itunes.apple.com'
-  - 'xp.apple.com'
+  - '+.appldnld.apple.com'
+  - '+.gdmf.apple.com'
+  - '+.mesu.apple.com'
+  - '+.ns.itunes.apple.com'
+  - '+.xp.apple.com'

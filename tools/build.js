@@ -215,6 +215,21 @@ function yamlPayload(arr) {
   return 'payload:\n' + arr.map(x => "  - '" + String(x).replace(/'/g, "''") + "'").join('\n') + '\n';
 }
 
+/**
+ * mihomo 的 domain provider 里，裸域名只做「精确匹配」，不匹配子域名。
+ *
+ * 实测（mihomo v1.19.20，log-level debug 看规则命中）：
+ *   payload 写 doubleclick.net  → 请求 ad.doubleclick.net 不命中
+ *   payload 写 +.doubleclick.net → 根域 doubleclick.net 和子域 ad.doubleclick.net 都命中
+ *
+ * 广告域名绝大多数是子域（ad.xxx / pagead2.xxx），所以输出必须统一加 +. 前缀。
+ * 不加的话规则表看起来有 30 万条，实际只能拦住恰好等于主域的那几个，
+ * 实测 adblock-tester 只有 56 分。
+ *
+ * Loon 那边不受影响：.rule 文件用的是 DOMAIN-SUFFIX，本来就是后缀匹配。
+ */
+const domainPayload = (set) => Array.from(set).sort().map(d => '+.' + d);
+
 function pm(target, policy) {
   const m = (src.policyMap || {})[target] || {};
   return m[policy] || policy;
@@ -426,7 +441,8 @@ function prepareMrs(groups) {
       if (!set.size) continue;
       const inFile = path.join(srcDir, g.name + '_' + cls + '.yaml');
       const outFile = path.join(outDir, g.name + '_' + cls + '.mrs');
-      fs.writeFileSync(inFile, yamlPayload(Array.from(set).sort()), 'utf8');
+      // domain 要加 +. 前缀才是后缀匹配，IP 保持原样
+      fs.writeFileSync(inFile, yamlPayload(cls === 'domain' ? domainPayload(set) : Array.from(set).sort()), 'utf8');
       todo.push([cls === 'domain' ? 'domain' : 'ipcidr', inFile, outFile].join('\t'));
     }
   }
@@ -512,7 +528,7 @@ function prepareMrs(groups) {
     const out = [];
     if (k.domain.size) {
       fs.writeFileSync(path.join(mihomoDir, g.name + '_Domain.yaml'),
-        yamlPayload(Array.from(k.domain).sort()), 'utf8');
+        yamlPayload(domainPayload(k.domain)), 'utf8');
       out.push('domain ' + k.domain.size);
       totalD += k.domain.size;
     }

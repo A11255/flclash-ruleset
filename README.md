@@ -213,8 +213,8 @@ REJECT   https://example.com/ads.list
 
 | 上游写法 | FlClash（mihomo） | Loon `.rule` |
 |---|---|---|
-| `.example.com`（前导点） | `example.com` → `domain` | `DOMAIN-SUFFIX,example.com` |
-| 裸域名 `example.com` | 原样 → `domain` | `DOMAIN-SUFFIX,example.com` |
+| `.example.com`（前导点） | `+.example.com` → `domain` | `DOMAIN-SUFFIX,example.com` |
+| 裸域名 `example.com` | `+.example.com` → `domain` | `DOMAIN-SUFFIX,example.com` |
 | `DOMAIN,x` / `DOMAIN-SUFFIX,x` | `x` → `domain` | `DOMAIN-SUFFIX,x` |
 | `IP-CIDR,x` / `IP-CIDR6,x` | 取 CIDR → `ipcidr` | `IP-CIDR(6),x,no-resolve` |
 | `DOMAIN-KEYWORD,x` | 原样 → `classical` | `DOMAIN-KEYWORD,x` |
@@ -222,7 +222,7 @@ REJECT   https://example.com/ads.list
 | `IP-ASN` / `AND` / `OR` / `PROCESS-NAME` 等 | 丢弃 | 丢弃 |
 
 细节：
-- 前导点会被去掉。mihomo 的 `domain` provider 本身就是后缀匹配，语义和 Loon 的 `.` 前缀一致。
+- **域名一律输出成 `+.example.com`**。mihomo 的 `domain` provider 里，裸域名只做**精确匹配**——写 `doubleclick.net` 拦不住 `ad.doubleclick.net`。加 `+.` 才是后缀匹配，同时覆盖根域和所有子域。实测同一张 30 万条的表，不加前缀时 adblock-tester 只有 56 分。
 - 只取规则行的第一个字段，所以 `DOMAIN-SUFFIX,x,reject`（带 policy 的 Surge 写法）能正确解析。
 - 注释行（`#`、`#!name=`、`;`、`//`、`!`）全部跳过。
 - 不符合域名/CIDR 格式的行会计入「非法丢弃」并打印出来。
