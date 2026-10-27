@@ -1,18 +1,21 @@
 # flclash-ruleset · 规则中心
 
-**只服务 FlClash**（Windows / Android）。**`upstreams.txt` 是唯一手工维护的文件**——一行一个规则源地址，加删规则就改这个文本。`sources.json` 只放全局参数（策略组名、内网兜底等），平时不用碰。
+**主端 FlClash**（Windows / Android），**附赠 Loon 规则集**。**`upstreams.txt` 是唯一手工维护的文件**——一行一个规则源地址，加删规则就改这个文本。`sources.json` 只放全局参数（策略组名、内网兜底等），平时不用碰。
 
-> Loon 和 OpenClash 两条线已移除（2026-10-27）。`dist/loon/` 和 `dist/openclash/` 不再生成，旧地址会 404。
+> 2026-10-27 起规则源改为直接拉 `blackmatrix7/ios_rule_script`，不再经过 `Code-Dramatist/Rule_Actions` 这层中间商。少一个仓库、少一次转发、少一个故障点。
 
 ```
 upstreams.txt                 ← 只改这里：加/删一行 = 加/删一个规则源
     │
-    └─ CI 拉取上游规则 ─→ 分类 ─→ 跨表去重 ─→ dist/mihomo/*.yaml
-                          ├─ 域名    → behavior: domain
-                          ├─ IP 段   → behavior: ipcidr
-                          └─ 关键词  → behavior: classical
-                                        ↓
-                          dist/flclash-override.js（JS 覆写脚本）
+    └─ CI 拉取上游规则 ─→ 分类 ─→ 按 group 合并 ─→ 跨表去重
+                          ├─ 域名    → behavior: domain     ─┐
+                          ├─ IP 段   → behavior: ipcidr      ├→ dist/mihomo/*.yaml
+                          ├─ 关键词  → behavior: classical   ─┘       │
+                          │                                          ↓
+                          │                              dist/flclash-override.js（FlClash）
+                          └─ 全类型（含 USER-AGENT / URL-REGEX）
+                                                              ↓
+                                                      dist/loon/*.rule（Loon RULE-SET）
 ```
 
 ## 地址（固定，永不需要更换）
@@ -62,6 +65,24 @@ https://raw.githubusercontent.com/A11255/flclash-ruleset/main/dist/flclash-overr
 
 两者路径完全一致，前者只是替你在国内做中转。
 
+## Loon 怎么用
+
+`dist/loon/` 下每个组一个 `.rule` 文件，是 Loon 原生的规则集格式（`TYPE,value[,no-resolve]`，不带策略列）。在你 Loon 配置的 `[Rule]` 段里加对应行即可，**策略写在 RULE-SET 那一行**：
+
+```
+RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Reject_Rule.rule,REJECT
+RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Direct_Rule.rule,DIRECT
+RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Proxy_Rule.rule,PROXY
+```
+
+三条就够，其余小表（`AdBlock` / `adrules` / `rejectAd` / `Adblock4limbo` / `apple_update` / `Google_FCM` / `Apple_Push`）按需再加。
+
+**顺序很重要**：`Reject_Rule` 放最前，`Direct_Rule` 和 `Proxy_Rule` 放你自己的分流规则之后。Loon 和 FlClash 一样是自上而下先命中先生效。
+
+Loon 端比 FlClash 端多 202 条规则——`USER-AGENT`（188 条）和 `URL-REGEX`（15 条）mihomo 不支持，只写进了 `.rule` 文件。
+
+> iOS 直连 `raw.githubusercontent.com` 经常超时，所以 Loon 地址统一用 jsDelivr。这个路径是 `dist/loon/` 下的小文件（单个最大 6.7 MB），jsDelivr 的缓存表现正常。
+
 ## 规则源
 
 清单在 **`upstreams.txt`**，一行一个地址。**行序 = 优先级**，上面的先匹配。
@@ -83,7 +104,7 @@ REJECT   https://example.com/ads.list
 ### 每行怎么写
 
 ```
-[策略]  地址  [name=名字]
+[策略]  地址  [name=名字]  [group=组名]
 ```
 
 | 字段 | 说明 |
@@ -91,42 +112,60 @@ REJECT   https://example.com/ads.list
 | 策略 | `REJECT` / `DIRECT` / `PROXY`，可简写 `R` / `D` / `P`。**省略则按地址关键词自动判断**（含 ad/adblock/adrule/reject/ban → REJECT；含 direct/cn → DIRECT；含 proxy/gfw → PROXY），判断不出会直接报错让你补 |
 | 地址 | `http` / `https` 开头的直链。支持 Loon `.rule`/`.lsr`、Surge `.list`、Clash provider `.yaml` 三种格式，也支持纯域名列表，格式自动识别 |
 | `name=名字` | 自定义源名字。省略则自动取地址里的文件名（`Reject_Rule.rule` → `Reject_Rule`），重名自动加 `_2` |
+| `group=组名` | **把几行合并成一张规则集**。写了同一个 group 的行，最终只产出一个 provider（FlClash）和一个 `.rule`（Loon），组名就是产物名。同组必须同策略，不写就自成一组 |
 
 `#` 之后是注释，可以写在行尾。
 
+### 为什么需要 group：blackmatrix7 把表拆成了两半
+
+`blackmatrix7/ios_rule_script` 的每张规则集都拆成两个互补的文件：
+
+| 文件 | 装什么 |
+|---|---|
+| `Advertising.list` | IP-CIDR、IP-CIDR6、DOMAIN-KEYWORD、USER-AGENT、URL-REGEX —— **一条域名都没有** |
+| `Advertising_Domain.list` | 全部是裸域名（29.6 万行） |
+
+**只拉其中一个会拿到一半规则，而且内核不报错、不告警，静默失效。** 所以必须成对写，再用 `group=` 拼回去。
+
+> 这段是实测出来的。早期版本只挂 `Xxx.list` 当 provider，内核只加载了 768 条（正好等于 IP-CIDR + 关键词 + IP-CIDR6 的数量），30 万条域名一条没进去。
+
 ### 当前清单
 
-| # | 名称 | 策略 | 域名 | IP | 关键词 | 说明 |
-|---|---|---|---|---|---|---|
-| 1 | `Reject_Rule` | REJECT | 304969 | 490 | 278 | 综合广告/跟踪拦截，最大的一张 |
-| 2 | `AdBlock` | REJECT | 1212 | 10 | — | dler-io 广告表 |
-| 3 | `adrules` | REJECT | 15101 | — | — | adrules.top，与 #1 高度重合，去重后仅剩独有部分 |
-| 4 | `rejectAd` | REJECT | 597 | 7 | 13 | 奶思广告合集（APP/小程序广告） |
-| 5 | `Adblock4limbo` | REJECT | 37 | — | — | 见「已知限制」 |
-| 6 | `apple_update` | DIRECT | 5 | — | — | Apple 系统更新 |
-| 7 | `Google_FCM` | DIRECT | 13 | 26 | — | Google 推送 |
-| 8 | `Apple_Push` | DIRECT | 3 | 9 | — | Apple 推送 |
-| 9 | `Direct_Rule` | DIRECT | 110580 | 12557 | 13 | 国内直连主表 |
-| 10 | `Proxy_Rule` | PROXY | 35083 | 1014 | 55 | 需要走代理的域名 |
+| 组 | 策略 | 域名 | IP | 关键词 | 上游来源 |
+|---|---|---|---|---|---|
+| `Reject_Rule` | REJECT | 305583 | 490 | 278 | `Advertising` + `Advertising_Domain` + `Privacy` + `Privacy_Domain` |
+| `AdBlock` | REJECT | 1212 | 10 | — | dler-io 广告表 |
+| `adrules` | REJECT | 14666 | — | — | adrules.top，与 `Reject_Rule` 高度重合，去重后仅剩独有部分 |
+| `rejectAd` | REJECT | 597 | 7 | 13 | 奶思广告合集（APP/小程序广告） |
+| `Adblock4limbo` | REJECT | 37 | — | — | 见「已知限制」 |
+| `apple_update` | REJECT | 5 | — | — | Apple 系统更新（**故意拦截**，防手机被强制升级） |
+| `Google_FCM` | DIRECT | 13 | 26 | — | Google 推送 |
+| `Apple_Push` | DIRECT | 3 | 9 | — | Apple 推送 |
+| `Direct_Rule` | DIRECT | 110308 | 12557 | 13 | `ChinaMax` + `ChinaMax_Domain` |
+| `Proxy_Rule` | PROXY | 35095 | 1014 | 55 | `GlobalMedia` + `Global` + `Proxy` 及各自 `_Domain` |
 
 `—` 表示该表不含此类规则。最终产出：
 
-| 总条数 | provider | 覆写规则 |
-|---|---|---|
-| 482072 | 21 | 34 |
+| 端 | 总条数 | provider / 文件 | 覆写规则 |
+|---|---|---|---|
+| FlClash | 481991 | 21 个 provider | 34 条 |
+| Loon | 482193 | 10 个 `.rule` | — |
+
+差额 202 条是 `USER-AGENT` 和 `URL-REGEX`，mihomo 不认，只有 Loon 收。
 
 ## 转换规则
 
-上游是三种格式混在一起的，生成器按行内容自动判断，不依赖文件后缀：
+上游是多种格式混在一起的，生成器按行内容自动判断，不依赖文件后缀：
 
-| 上游写法 | 转成 | behavior |
+| 上游写法 | FlClash（mihomo） | Loon `.rule` |
 |---|---|---|
-| `.example.com`（前导点） | `example.com` | `domain` |
-| 裸域名 `example.com` | 原样 | `domain` |
-| `DOMAIN,x` / `DOMAIN-SUFFIX,x` | `x` | `domain` |
-| `IP-CIDR,x` / `IP-CIDR6,x` | 取 CIDR 部分 | `ipcidr` |
-| `DOMAIN-KEYWORD,x` | 原样保留前缀 | `classical` |
-| `USER-AGENT` / `URL-REGEX` / `IP-ASN` / `AND` 等 | **丢弃** | mihomo 不支持 |
+| `.example.com`（前导点） | `example.com` → `domain` | `DOMAIN-SUFFIX,example.com` |
+| 裸域名 `example.com` | 原样 → `domain` | `DOMAIN-SUFFIX,example.com` |
+| `DOMAIN,x` / `DOMAIN-SUFFIX,x` | `x` → `domain` | `DOMAIN-SUFFIX,x` |
+| `IP-CIDR,x` / `IP-CIDR6,x` | 取 CIDR → `ipcidr` | `IP-CIDR(6),x,no-resolve` |
+| `DOMAIN-KEYWORD,x` | 原样 → `classical` | `DOMAIN-KEYWORD,x` |
+| `USER-AGENT` / `URL-REGEX` | **丢弃**（mihomo 不支持） | **保留** |
+| `IP-ASN` / `AND` / `OR` / `PROCESS-NAME` 等 | 丢弃 | 丢弃 |
 
 细节：
 - 前导点会被去掉。mihomo 的 `domain` provider 本身就是后缀匹配，语义和 Loon 的 `.` 前缀一致。
@@ -138,9 +177,11 @@ REJECT   https://example.com/ads.list
 
 mihomo 按 `rules` 顺序匹配，先命中先生效。同一个域名在后面的表里再出现一次，行为完全不变，只是多占一份内存。
 
-所以生成器做了一次全局去重：**按表顺序保留首次出现的那条**。实测移除 **204608 条**重复项，其中 `adrules` 的 210717 条里有 195616 条与 `Reject_Rule` 完全重复，去重后只剩 15101 条独有的。
+所以生成器做了一次全局去重：**按组顺序保留首次出现的那条**。当前移除 **205045 条**重复项——`adrules` 的 17 万条里绝大多数与 `Reject_Rule` 完全重复，`Advertising.list` 与 `Advertising_Domain.list` 之间也有交集。
 
-这一步把总规则数从 686620 压到 482072，内存占用约减少三成。**行为没有任何变化**。
+这一步把总规则数从 68.7 万压到 48.2 万，内存占用约减少三成。**行为没有任何变化**。
+
+去重是跨组做的，所以 `Direct_Rule` 里有些域名会被排在前面的 `Reject_Rule` 抢先 `REJECT`。这是**故意的**——同一个域名既是广告又出现在国内直连表里时，应该拦截。
 
 ## 更新
 
@@ -150,7 +191,7 @@ mihomo 按 `rules` 顺序匹配，先命中先生效。同一个域名在后面�
 
 1. GitHub 网页上点开 `upstreams.txt` → 铅笔图标 → 加一行 / 删一行 → Commit
 2. 等 Actions 跑完（仓库首页能看到 bot 的 `chore: rebuild dist` 提交）
-3. FlClash 里重启 VPN / 重新拉取覆写脚本
+3. FlClash 里重启 VPN / 重新拉取覆写脚本；Loon 里重新加载配置
 
 **不需要动 `sources.json`，也不需要碰 `dist/`。**
 
@@ -182,7 +223,8 @@ tools/build.js              生成器（零依赖，Node 18+）
 .github/workflows/build.yml CI
 dist/
 ├── flclash-override.js     → FlClash 覆写脚本（JS）
-└── mihomo/                 → 21 个 rule-provider yaml
+├── mihomo/                 → 21 个 rule-provider yaml
+└── loon/                   → 10 个 .rule（Loon RULE-SET 直接引用）
 _upstream/                  上游规则缓存（不入库）
 ```
 
@@ -200,7 +242,9 @@ _upstream/                  上游规则缓存（不入库）
 
 - **PC**：装油猴（Tampermonkey）后加 `Adblock4limbo.user.js`，效果比代理层拦截更彻底
 
-**kelee.one 那 7 张表已移除。** 它们当年只喂给 Loon（Cloudflare 按机房 IP 封锁，CI 拉不到），FlClash 端从来没用到过（当时标的是 `flclash:off`）。它们全是 DIRECT 规则（微信/腾讯/App Store/TestFlight/Apple 账号/Cloudflare CDN），`Direct_Rule` 的 11 万条域名已覆盖绝大部分。
+**`apple_update` 是故意设成 REJECT 的。** 它会拦掉 `mesu.apple.com` 和 `gdmf.apple.com`（OTA 更新元数据），手机上「设置 → 通用 → 软件更新」会提示无法检查更新——就是要这个效果。要恢复更新，把它改成 `DIRECT` 并挪到直连那组。
+
+> **别加 `ocsp.apple.com`**。那是证书吊销检查，拦了会导致 App 闪退、装不上、企业签失效。
 
 ## 说明
 

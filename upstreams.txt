@@ -7,7 +7,7 @@
 #    3. 到 FlClash 里点「更新订阅」/ 重启 VPN 就生效
 #
 #  每行写法：
-#       [策略]  地址  [name=名字]
+#       [策略]  地址  [name=名字]  [group=组名]
 #
 #    策略   REJECT / DIRECT / PROXY
 #           可简写 R / D / P；省略则按地址里的关键词自动判断
@@ -15,12 +15,22 @@
 #
 #    name   自定义源名字（省略则自动取地址里的文件名）
 #
+#    group  把几行合并成一张规则集。写了同一个 group 的行，最终只产出一个
+#           provider（FlClash）和一个 .rule 文件（Loon），组名就是产物名。
+#           同组的行必须同策略。不写就自成一组，组名 = 源名。
+#
 #  注意：行序 = 规则优先级，上面的先匹配。想提高优先级就往上挪。
 #        # 之后是注释，可写行尾。
 # ══════════════════════════════════════════════════════════════════════
 
 # ── 广告拦截：排最前面，先拦掉再说 ────────────────────────────────────
-REJECT   https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Reject_Rule/Reject_Rule.rule
+# blackmatrix7 把每张表拆成两份：Xxx.list 装 IP/关键词/USER-AGENT，
+# Xxx_Domain.list 装域名。两份是互补的，缺一份就少一半规则，所以必须成对写。
+REJECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Advertising/Advertising.list            group=Reject_Rule
+REJECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Advertising/Advertising_Domain.list     group=Reject_Rule
+REJECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Privacy/Privacy.list                    group=Reject_Rule
+REJECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Privacy/Privacy_Domain.list             group=Reject_Rule
+
 REJECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/AdBlock.list
 REJECT   https://adrules.top/adrules.list
 REJECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/rejectAd.list
@@ -32,6 +42,14 @@ REJECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/apple_update.
 DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Google%20FCM.list   name=Google_FCM
 DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Apple%20Push.list   name=Apple_Push
 
-# ── 国内直连 / 代理总表 ────────────────────────────────────────────────
-DIRECT   https://github.com/Code-Dramatist/Rule_Actions/raw/refs/heads/main/Direct_Rule/Direct_Rule.rule
-PROXY    https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Proxy_Rule/Proxy_Rule.rule
+# ── 国内直连总表 ──────────────────────────────────────────────────────
+DIRECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/ChinaMax/ChinaMax.list                  group=Direct_Rule
+DIRECT   https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/ChinaMax/ChinaMax_Domain.list           group=Direct_Rule
+
+# ── 代理总表：境外媒体 + 常见被墙服务 ─────────────────────────────────
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/GlobalMedia/GlobalMedia.list            group=Proxy_Rule
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/GlobalMedia/GlobalMedia_Domain.list     group=Proxy_Rule
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Global/Global.list                      group=Proxy_Rule
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Global/Global_Domain.list               group=Proxy_Rule
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Proxy/Proxy.list                        group=Proxy_Rule
+PROXY    https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/Proxy/Proxy_Domain.list                 group=Proxy_Rule

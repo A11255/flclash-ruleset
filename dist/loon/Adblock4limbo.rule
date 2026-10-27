@@ -1,0 +1,44 @@
+# NAME: Adblock4limbo
+# POLICY: REJECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
+# GENERATED: 2026-10-27 08:54:59 UTC
+# SOURCES: Adblock4limbo
+# TOTAL: 37
+# 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Adblock4limbo.rule,REJECT
+
+DOMAIN-SUFFIX,21e18b62f2.4a41fff8a6.com
+DOMAIN-SUFFIX,25e87c0802f91cf8cgg.6uzxtlv.cn
+DOMAIN-SUFFIX,2700.5mgrgsc.cn
+DOMAIN-SUFFIX,5e87c0802f91cf8cgg.6uzxtlv.cn
+DOMAIN-SUFFIX,a.adforcast.com
+DOMAIN-SUFFIX,a.bestcontentfood.top
+DOMAIN-SUFFIX,a.realsrv.com
+DOMAIN-SUFFIX,a.shukriya90.com
+DOMAIN-SUFFIX,ad.vidverto.io
+DOMAIN-SUFFIX,cdn.tsyndicate.com
+DOMAIN-SUFFIX,creative.kbnmnl.com
+DOMAIN-SUFFIX,creative.mnaspm.com
+DOMAIN-SUFFIX,creative.xlviirdr.com
+DOMAIN-SUFFIX,fg.knlk2md.cn
+DOMAIN-SUFFIX,go.mnaspm.com
+DOMAIN-SUFFIX,go.rmhfrtnd.com
+DOMAIN-SUFFIX,go.xlvirdr.com
+DOMAIN-SUFFIX,img.ad-nex.com
+DOMAIN-SUFFIX,js.capndr.com
+DOMAIN-SUFFIX,js.waqool.com
+DOMAIN-SUFFIX,js.wpshsdk.com
+DOMAIN-SUFFIX,js.wpushsdk.com
+DOMAIN-SUFFIX,media.aso1.net
+DOMAIN-SUFFIX,media.dalysv.com
+DOMAIN-SUFFIX,my.rtmark.net
+DOMAIN-SUFFIX,p242.plainwrk.name
+DOMAIN-SUFFIX,pc.stgowan.com
+DOMAIN-SUFFIX,prd.jwpltx.com
+DOMAIN-SUFFIX,s10.histats.com
+DOMAIN-SUFFIX,stat.gn01.top
+DOMAIN-SUFFIX,tg.gtlpaj.com
+DOMAIN-SUFFIX,video.ktkjmp.com
+DOMAIN-SUFFIX,widgets.amung.us
+DOMAIN-SUFFIX,x2sfa.javgg.eu
+DOMAIN-SUFFIX,xd3r.javgg.eu
+DOMAIN-SUFFIX,xn--2qux23c9ziyrq.club
+DOMAIN-SUFFIX,xn--2qux23c9ziyrq.plus

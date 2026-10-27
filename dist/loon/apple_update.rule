@@ -1,0 +1,12 @@
+# NAME: apple_update
+# POLICY: REJECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
+# GENERATED: 2026-10-27 08:54:59 UTC
+# SOURCES: apple_update
+# TOTAL: 5
+# 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/apple_update.rule,REJECT
+
+DOMAIN-SUFFIX,appldnld.apple.com
+DOMAIN-SUFFIX,gdmf.apple.com
+DOMAIN-SUFFIX,mesu.apple.com
+DOMAIN-SUFFIX,ns.itunes.apple.com
+DOMAIN-SUFFIX,xp.apple.com

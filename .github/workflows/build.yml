@@ -45,8 +45,21 @@ jobs:
           [ "$missing" -eq 0 ]
           echo "provider 引用全部存在"
 
-          # 单端仓库：别的端着陆目录不应该再出现
-          [ ! -e dist/loon ] && [ ! -e dist/openclash ]
+          # Loon 规则集：每个 group 一个 .rule，不能是空文件，
+          # 且不能只有注释头（说明分类结果为空，规则没进来）
+          r=0
+          for f in dist/loon/*.rule; do
+            [ -e "$f" ] || continue
+            r=$((r+1))
+            body=$(grep -cvE '^\s*(#|$)' "$f" || true)
+            echo "  $(basename "$f")  $body 条"
+            [ "$body" -gt 0 ] || { echo "::error::$f 里没有任何规则"; exit 1; }
+          done
+          echo "Loon 规则集: $r 个"
+          [ "$r" -ge 1 ]
+
+          # 只剩单端 + Loon 规则集，OpenClash 落户目录不应该再出现
+          [ ! -e dist/openclash ]
           echo "产物目录: $(ls dist | tr '\n' ' ')"
 
       - name: 提交产物

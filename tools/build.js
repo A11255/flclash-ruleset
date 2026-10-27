@@ -56,18 +56,19 @@ function parseUpstreams(text, file) {
     const line = raw.replace(/(^|\s)#.*$/, '').trim();
     if (!line) return;
 
-    let url = null, policy = null, name = null;
+    let url = null, policy = null, name = null, group = null;
 
     for (const tok of line.split(/\s+/)) {
       if (/^https?:\/\//i.test(tok)) { url = tok; continue; }
       if (/^name=.+/i.test(tok)) { name = tok.slice(5); continue; }
+      if (/^group=.+/i.test(tok)) { group = tok.slice(6); continue; }
       const up = tok.toUpperCase();
       if (POLICY_ALIAS[up] || up === 'REJECT' || up === 'DIRECT' || up === 'PROXY') {
         policy = POLICY_ALIAS[up] || up;
         continue;
       }
       throw new Error(file + ' 第 ' + no + ' 行无法识别：「' + tok + '」\n' +
-        '  允许的写法：REJECT/DIRECT/PROXY（或 R/D/P）、http(s) 地址、name=名字');
+        '  允许的写法：REJECT/DIRECT/PROXY（或 R/D/P）、http(s) 地址、name=名字、group=组名');
     }
 
     if (!url) {
@@ -91,6 +92,7 @@ function parseUpstreams(text, file) {
     }
 
     const e = { name: nm, url, policy };
+    if (group) e.group = sanitizeName(group);
     out.push(e);
   });
 
@@ -148,6 +150,8 @@ async function loadRemote(u) {
 const DOMAIN_RE = /^[a-z0-9*][a-z0-9.\-_*]*$/;
 // 合法 CIDR：v4 或 v6
 const CIDR_RE = /^[0-9a-fA-F:.]+\/\d{1,3}$/;
+// Loon 认、mihomo 不认的规则类型。上游表里这类规则不少（ChinaMax 有 65 条 USER-AGENT）。
+const LOON_ONLY = new Set(['USER-AGENT', 'URL-REGEX', 'IP-ASN', 'PROTOCOL']);
 
 /**
  * 把规则文件拆成 domain / ip / keyword 三类。
@@ -160,6 +164,8 @@ function classify(text) {
   const domain = new Set();
   const ip = new Set();
   const kw = new Set();
+  // LOON_ONLY 这些类型 mihomo 不认，但 Loon 认。单独收集，只写进 Loon 的 .rule 文件。
+  const extras = new Set();
   const dropped = {};
   const bad = { domain: 0, ip: 0 };
 
@@ -194,11 +200,15 @@ function classify(text) {
       else bad.ip++;
     } else if (type === 'DOMAIN-KEYWORD') {
       if (arg) kw.add('DOMAIN-KEYWORD,' + arg.toLowerCase());
+    } else if (LOON_ONLY.has(type)) {
+      // 原样收下，只给 Loon 用
+      extras.add(l);
+      drop(type);
     } else {
       drop(type);
     }
   }
-  return { domain, ip, kw, dropped, bad };
+  return { domain, ip, kw, extras, dropped, bad };
 }
 
 function yamlPayload(arr) {
@@ -248,20 +258,20 @@ function buildFlClash(sets) {
   // 关键词表最先匹配（classical 是包含匹配，优先级最高）
   for (const s of sets) {
     if (!s.k || !s.k.kw.size) continue;
-    rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_KW,' + pm('flclash', s.u.policy)));
-    pv.push(provEntry(s.u.name + '_KW', 'classical', s.u.name + '_KW.yaml'));
+    rules.push(JSON.stringify('RULE-SET,' + s.name + '_KW,' + pm('flclash', s.policy)));
+    pv.push(provEntry(s.name + '_KW', 'classical', s.name + '_KW.yaml'));
   }
   // 域名表
   for (const s of sets) {
     if (!s.k || !s.k.domain.size) continue;
-    rules.push(JSON.stringify('RULE-SET,' + s.u.name + ',' + pm('flclash', s.u.policy)));
-    pv.push(provEntry(s.u.name, 'domain', s.u.name + '_Domain.yaml'));
+    rules.push(JSON.stringify('RULE-SET,' + s.name + ',' + pm('flclash', s.policy)));
+    pv.push(provEntry(s.name, 'domain', s.name + '_Domain.yaml'));
   }
   // IP 表放最后，全部 no-resolve（避免为纯 IP 规则触发 DNS 解析）
   for (const s of sets) {
     if (!s.k || !s.k.ip.size) continue;
-    rules.push(JSON.stringify('RULE-SET,' + s.u.name + '_IP,' + pm('flclash', s.u.policy) + ',no-resolve'));
-    pv.push(provEntry(s.u.name + '_IP', 'ipcidr', s.u.name + '_IP.yaml'));
+    rules.push(JSON.stringify('RULE-SET,' + s.name + '_IP,' + pm('flclash', s.policy) + ',no-resolve'));
+    pv.push(provEntry(s.name + '_IP', 'ipcidr', s.name + '_IP.yaml'));
   }
 
   for (const t of src.tailRules || []) rules.push(JSON.stringify(t));
@@ -336,10 +346,59 @@ function main(config) {
 }
 
 // ══════════════════════════════════════════════
+// Loon 规则文件（RULE-SET 可直接引用）
+//
+// 每个 group 输出一个 dist/loon/<组名>.rule，格式为 Loon 的规则集语法：
+//     TYPE,value[,no-resolve]
+// 不带策略列 —— 策略写在 Loon 配置的 RULE-SET 那一行里。
+// ══════════════════════════════════════════════
+function buildLoonRules(groups) {
+  const dir = path.join(DIST, 'loon');
+  ensure(dir);
+  // 清掉上一轮的产物，避免删了组之后留下孤儿文件
+  for (const f of fs.readdirSync(dir)) {
+    if (f.endsWith('.rule')) fs.unlinkSync(path.join(dir, f));
+  }
+
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const stat = [];
+
+  for (const g of groups) {
+    const { k } = g;
+    const lines = [];
+
+    // 顺序与 FlClash 端保持一致：关键词 → 域名 → Loon 专用 → IP
+    for (const v of Array.from(k.kw).sort()) lines.push(v);
+    for (const d of Array.from(k.domain).sort()) lines.push('DOMAIN-SUFFIX,' + d);
+    for (const e of Array.from(k.extras).sort()) lines.push(e);
+    for (const c of Array.from(k.ip).sort()) {
+      lines.push((c.includes(':') ? 'IP-CIDR6,' : 'IP-CIDR,') + c + ',no-resolve');
+    }
+
+    const head = [
+      '# NAME: ' + g.name,
+      '# POLICY: ' + g.policy + '   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）',
+      '# GENERATED: ' + stamp,
+      '# SOURCES: ' + g.members.join(', '),
+      '# TOTAL: ' + lines.length,
+      '# 用法: RULE-SET,' + CDN + '/dist/loon/' + g.name + '.rule,' + g.policy,
+    ];
+
+    fs.writeFileSync(path.join(dir, g.name + '.rule'), head.join('\n') + '\n\n' + lines.join('\n') + '\n', 'utf8');
+    stat.push({ name: g.name, lines: lines.length });
+  }
+  return stat;
+}
+
+// ══════════════════════════════════════════════
 (async () => {
   ensure(DIST);
   const mihomoDir = path.join(DIST, 'mihomo');
   ensure(mihomoDir);
+  // 清掉上一轮产物，避免改了组名之后留下孤儿 provider 文件（Dist 全是生成物，可随时重造）
+  for (const f of fs.readdirSync(mihomoDir)) {
+    if (f.endsWith('.yaml')) fs.unlinkSync(path.join(mihomoDir, f));
+  }
 
   const sets = [];
   console.log('=== 拉取并转换上游规则 ===');
@@ -349,67 +408,107 @@ function main(config) {
     sets.push({ u, k });
   }
 
+  // ── 按 group 聚合 ──
+  // upstreams.txt 里写了 group=xxx 的源会合并成一个组，最终只产出一个 provider。
+  // 用途：blackmatrix7 把一张规则集拆成 Xxx.list（装 IP/关键词/UA）和
+  // Xxx_Domain.list（装域名）两份，必须成对拉取再拼回一张完整规则集，
+  // 否则只拿到一半规则且内核不报错。
+  // 没写 group 的源自成一组，组名 = 源名，行为与改动前完全一致。
+  const groupMap = new Map();
+  for (const s of sets) {
+    const gname = s.u.group || s.u.name;
+    if (!groupMap.has(gname)) {
+      groupMap.set(gname, {
+        name: gname,
+        policy: s.u.policy,
+        k: { domain: new Set(), ip: new Set(), kw: new Set(), extras: new Set() },
+        members: [],
+        dropped: {},
+        bad: { domain: 0, ip: 0 },
+      });
+    }
+    const g = groupMap.get(gname);
+    if (g.policy !== s.u.policy) {
+      throw new Error('group=' + gname + ' 里的源策略不一致：' + g.policy + ' vs ' +
+        s.u.policy + '（' + s.u.name + '），同组必须同策略');
+    }
+    g.members.push(s.u.name);
+    for (const cls of ['domain', 'ip', 'kw', 'extras']) {
+      for (const v of s.k[cls]) g.k[cls].add(v);
+    }
+    for (const t in s.k.dropped) g.dropped[t] = (g.dropped[t] || 0) + s.k.dropped[t];
+    g.bad.domain += s.k.bad.domain;
+    g.bad.ip += s.k.bad.ip;
+  }
+  const groups = Array.from(groupMap.values());
+
   // ── 跨规则集去重 ──
   // mihomo 按 RULES 顺序匹配，先命中先生效。同一个域名/网段在后面的规则集里
   // 再出现一次不会有任何行为差异，只会多占一份内存。这里按「先出现者保留」去重。
   const seen = { domain: new Set(), ip: new Set(), kw: new Set() };
   let removed = 0;
-  for (const s of sets) {
-    if (!s.k) continue;
+  for (const g of groups) {
     const rm = { domain: 0, ip: 0, kw: 0 };
     for (const cls of ['kw', 'domain', 'ip']) {
       const kept = new Set();
-      for (const v of s.k[cls]) {
+      for (const v of g.k[cls]) {
         if (seen[cls].has(v)) rm[cls]++;
         else { seen[cls].add(v); kept.add(v); }
       }
-      s.k[cls] = kept;
+      g.k[cls] = kept;
     }
-    s.rm = rm;
+    g.rm = rm;
     removed += rm.domain + rm.ip + rm.kw;
   }
 
-  let totalD = 0, totalI = 0, totalK = 0;
-  for (const s of sets) {
-    const { u, k } = s;
-    if (!k) continue;   // 防御：理论上每个源都有分类结果
+  let totalD = 0, totalI = 0, totalK = 0, totalE = 0;
+  for (const g of groups) {
+    const { k } = g;
     const out = [];
     if (k.domain.size) {
-      fs.writeFileSync(path.join(mihomoDir, u.name + '_Domain.yaml'),
+      fs.writeFileSync(path.join(mihomoDir, g.name + '_Domain.yaml'),
         yamlPayload(Array.from(k.domain).sort()), 'utf8');
       out.push('domain ' + k.domain.size);
       totalD += k.domain.size;
     }
     if (k.ip.size) {
-      fs.writeFileSync(path.join(mihomoDir, u.name + '_IP.yaml'),
+      fs.writeFileSync(path.join(mihomoDir, g.name + '_IP.yaml'),
         yamlPayload(Array.from(k.ip).sort()), 'utf8');
       out.push('ip ' + k.ip.size);
       totalI += k.ip.size;
     }
     if (k.kw.size) {
-      fs.writeFileSync(path.join(mihomoDir, u.name + '_KW.yaml'),
+      fs.writeFileSync(path.join(mihomoDir, g.name + '_KW.yaml'),
         yamlPayload(Array.from(k.kw).sort()), 'utf8');
       out.push('kw ' + k.kw.size);
       totalK += k.kw.size;
     }
+    totalE += k.extras.size;
 
-    const dup = s.rm ? Object.keys(s.rm).filter(x => s.rm[x]).map(x => x + '-dup ' + s.rm[x]) : [];
-    const dk = Object.keys(k.dropped);
-    const ds = dk.length ? '  跳过: ' + dk.map(x => x + '×' + k.dropped[x]).join(', ') : '';
-    const bs = (k.bad.domain + k.bad.ip) ? '  非法丢弃: ' + (k.bad.domain + k.bad.ip) : '';
-    console.log('  ' + (u.name + ' (' + u.policy + ')').padEnd(26) + out.join('  ') +
-      (dup.length ? '  [' + dup.join(', ') + ']' : '') + ds + bs);
+    const dup = Object.keys(g.rm).filter(x => g.rm[x]).map(x => x + '-dup ' + g.rm[x]);
+    const dk = Object.keys(g.dropped);
+    const ds = dk.length ? '  跳过: ' + dk.map(x => x + '×' + g.dropped[x]).join(', ') : '';
+    const bs = (g.bad.domain + g.bad.ip) ? '  非法丢弃: ' + (g.bad.domain + g.bad.ip) : '';
+    const ms = g.members.length > 1 ? '  ← ' + g.members.length + ' 个源合并' : '';
+    console.log('  ' + (g.name + ' (' + g.policy + ')').padEnd(24) + out.join('  ') +
+      (dup.length ? '  [' + dup.join(', ') + ']' : '') + ds + bs + ms);
   }
 
   console.log('');
   console.log('=== 生成产物 ===');
-  const f = buildFlClash(sets);
+  const f = buildFlClash(groups);
   console.log('  dist/flclash-override.js   provider ' + f.providers + ' / 规则 ' + f.rules + ' 条');
   console.log('  dist/mihomo/               ' + fs.readdirSync(mihomoDir).length + ' 个 rule-provider yaml');
+
+  const loonStat = buildLoonRules(groups);
+  for (const s of loonStat) {
+    console.log('  dist/loon/' + (s.name + '.rule').padEnd(24) + s.lines + ' 条（Loon RULE-SET 可直接引用）');
+  }
+
   console.log('');
   console.log('  去重移除 ' + removed + ' 条重复项');
   console.log('  合计 domain=' + totalD + '  ip=' + totalI + '  kw=' + totalK +
-    '  总计 ' + (totalD + totalI + totalK));
+    '  Loon专用=' + totalE + '  总计 ' + (totalD + totalI + totalK + totalE));
   console.log('');
   console.log('完成 → dist/');
 })();
