@@ -1,6 +1,6 @@
 # flclash-ruleset · 规则中心
 
-一处维护，多端下发。`sources.json` 是唯一手工维护的文件。
+一处维护，多端下发。**`upstreams.txt` 是唯一手工维护的文件**——一行一个规则源地址，加删规则就改这个文本。`sources.json` 只放全局参数（策略组映射、内网兜底、去重开关等），平时不用碰。
 
 **三端各自独立**，不是强行同源：规则数据来自同一份清单，但每端用自己平台的能力和格式。
 
@@ -11,7 +11,7 @@
 | **OpenClash**（OpenWrt） | 纯 YAML 覆写模块（零 provider） | 订阅自带的策略组 | 手动设更新时间，或重启时重新拉取 |
 
 ```
-sources.json
+upstreams.txt                 ← 只改这里：加/删一行 = 加/删一个规则源
     │
     ├─ CI 拉取上游规则 ─→ 分类 ─→ 跨表去重 ─→ dist/mihomo/*.yaml
     │                     ├─ 域名    → behavior: domain        → FlClash / OpenClash
@@ -188,7 +188,40 @@ Initial configuration complete, total time: 7ms
 
 ## 规则源
 
-按优先级排列（`sources.json` 里的数组顺序就是生效顺序）。
+清单在 **`upstreams.txt`**，一行一个地址。**行序 = 优先级**，上面的先匹配。
+
+### 加一个规则源
+
+在 `upstreams.txt` 末尾（或任意想放的位置）加一行：
+
+```
+REJECT   https://example.com/ads.list
+```
+
+保存 → CI 自动重建 `dist/`（1~2 分钟）→ 各端点「刷新订阅」就生效。
+
+### 删一个规则源
+
+把那一行删掉，或者在前面加 `#` 注释掉。下次刷新就没了。
+
+### 每行怎么写
+
+```
+[策略]  地址  [选项...]
+```
+
+| 字段 | 说明 |
+|---|---|
+| 策略 | `REJECT` / `DIRECT` / `PROXY`，可简写 `R` / `D` / `P`。**省略则按地址关键词自动判断**（含 ad/adblock/adrule/reject/ban → REJECT；含 direct/cn → DIRECT；含 proxy/gfw → PROXY），判断不出会直接报错让你补 |
+| 地址 | `http` / `https` 开头的直链。支持 Loon `.rule`/`.lsr`、Surge `.list`、Clash provider `.yaml` 三种格式，也支持纯域名列表，格式自动识别 |
+| `name=名字` | 自定义源名字。省略则自动取地址里的文件名（`Reject_Rule.rule` → `Reject_Rule`），重名自动加 `_2` |
+| `flclash:off` | 不进 FlClash 端（用于 CI 拉不到、但设备能直连的源） |
+| `loon:off` | 不进 Loon 端 |
+| `openclash:off` | 不进 OpenClash 端（大表别进，路由器扛不住） |
+
+`#` 之后是注释，可以写在行尾。
+
+### 当前清单
 
 | # | 名称 | 策略 | 域名 | IP | 关键词 | 说明 |
 |---|---|---|---|---|---|---|
@@ -214,11 +247,11 @@ Initial configuration complete, total time: 7ms
 
 | 端 | 总条数 | provider | 规则 |
 |---|---|---|---|
-| FlClash | 482072 | 21 | 35 |
+| FlClash | 482072 | 21 | 34 |
 | Loon | — | 16 个上游直链 | 16 条 RULE-SET |
-| **OpenClash** | **17045** | **0（内联）** | **1 个 `+rules` 块** |
+| **OpenClash** | **322770** | **15（`.mrs`）** | **15 条 RULE-SET + 11 条内网兜底** |
 
-标注「仅 Loon」的 7 个表在 `sources.json` 里写了 `"flclash": false`。生成器**不会去下载它们**，只把链接写进 `loon.conf`。
+标注「仅 Loon」的 7 个表在 `upstreams.txt` 对应行末尾写了 `flclash:off`。生成器**不会去下载它们**，只把链接写进 `loon.conf`。
 
 ## 转换规则
 
@@ -249,13 +282,27 @@ mihomo 按 `rules` 顺序匹配，先命中先生效。同一个域名在后面�
 
 ## 更新
 
+### 日常：加/删规则源（最常见）
+
+直接改 `upstreams.txt` 就行，本地都不用装环境：
+
+1. GitHub 网页上点开 `upstreams.txt` → 铅笔图标 → 加一行 / 删一行 → Commit
+2. 等 Actions 跑完（Actions 页面能看到「rebuild dist」的提交）
+3. FlClash 里点「更新订阅」/ Loon 里点「更新配置」/ OpenClash 里点「更新配置」
+
+**不需要动 `sources.json`，也不需要碰 `dist/`。**
+
+### 改了全局参数（策略组名、内网兜底、去重开关）
+
+改 `sources.json`，push 后同样自动重建。
+
+### 本地预览
+
 ```powershell
 cd D:\ProgramData\WorkBuddy\2026-10-24-10-31-21\flclash-ruleset
 git pull
 node tools/build.js --fetch     # 本地先跑一遍看效果（--fetch 强制重下）
-git add -A
-git commit -m "update"
-git push
+git status                      # 看 dist 有没有变化
 ```
 
 push 后 CI 自动拉上游、重新生成 `dist/` 并提交。各端下次拉取就是新的。
@@ -267,8 +314,10 @@ push 后 CI 自动拉上游、重新生成 `dist/` 并提交。各端下次拉�
 ## 目录
 
 ```
-sources.json                ★ 唯一真源
+upstreams.txt               ★ 唯一真源：规则源清单（一行一个地址）
+sources.json                全局参数（策略组映射 / 内网兜底 / 去重开关）
 tools/build.js              生成器（零依赖，Node 18+）
+tools/openclash-prepare.sh  路由器侧规则缓存预热 / 排障
 .github/workflows/build.yml CI
 dist/
 ├── flclash-override.js     → FlClash 覆写脚本（JS）

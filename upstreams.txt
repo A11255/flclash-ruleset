@@ -1,0 +1,48 @@
+# ══════════════════════════════════════════════════════════════════════
+#  规则源清单 —— 唯一手工维护的「订阅规则地址」列表
+#
+#  怎么用：
+#    1. 加一行 = 加一个规则源；删一行 = 删掉它（也可以在前面加 # 注释掉）
+#    2. 保存到 GitHub → Actions 自动重建 dist（约 1~2 分钟）
+#    3. 到 FlClash / Loon / OpenClash 里点「刷新订阅」/「更新配置」就生效
+#
+#  每行写法：
+#       [策略]  地址  [选项...]
+#
+#    策略   REJECT / DIRECT / PROXY
+#           可简写 R / D / P；省略则按地址里的关键词自动判断
+#           （含 ad/adblock/adrule/reject/ban → REJECT，含 direct/cn → DIRECT，含 proxy/gfw → PROXY）
+#
+#    选项   name=名字        自定义源名字（默认自动取地址里的文件名）
+#           flclash:off      不进 FlClash 端
+#           loon:off         不进 Loon 端
+#           openclash:off    不进 OpenClash 端
+#
+#  注意：数组顺序 = 规则优先级，上面的先匹配。想提高优先级就往上挪。
+#        # 之后是注释，可写行尾。
+# ══════════════════════════════════════════════════════════════════════
+
+# ── 广告拦截：排最前面，先拦掉再说 ────────────────────────────────────
+REJECT   https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Reject_Rule/Reject_Rule.rule
+REJECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/AdBlock.list
+REJECT   https://adrules.top/adrules.list
+REJECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/rejectAd.list
+REJECT   https://limbopro.com/Adblock4limbo_surge.list            name=Adblock4limbo loon:off
+
+# ── 系统服务直连：推送/更新不能被代理带走 ──────────────────────────────
+DIRECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/apple_update.list
+DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Google%20FCM.list   name=Google_FCM
+DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Apple%20Push.list   name=Apple_Push
+
+# ── kelee.one 系列：Cloudflare 按机房 IP 封，本机/CI 拉不到，只给 Loon 用 ──
+DIRECT   https://rule.kelee.one/Loon/Cloudflarecn.lsr             flclash:off
+DIRECT   https://rule.kelee.one/Loon/Cloudflare.lsr               flclash:off
+DIRECT   https://kelee.one/Tool/Loon/Lsr/AppleAccount.lsr         flclash:off
+DIRECT   https://kelee.one/Tool/Loon/Lsr/AppStore.lsr             flclash:off
+DIRECT   https://rule.kelee.one/Loon/WeChat.lsr                   flclash:off
+DIRECT   https://rule.kelee.one/Loon/Tencent.lsr                  flclash:off
+DIRECT   https://rule.kelee.one/Loon/TestFlight.lsr               flclash:off
+
+# ── 国内直连 / 代理总表：大表只给 FlClash 和 Loon，OpenClash 端交给订阅自带 GeoSite ──
+DIRECT   https://github.com/Code-Dramatist/Rule_Actions/raw/refs/heads/main/Direct_Rule/Direct_Rule.rule   openclash:off
+PROXY    https://raw.githubusercontent.com/Code-Dramatist/Rule_Actions/main/Proxy_Rule/Proxy_Rule.rule      openclash:off

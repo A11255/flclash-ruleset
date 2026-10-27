@@ -3,7 +3,8 @@
  * 规则中心 · 生成器
  *
  * 流程：
- *   1. 从 sources.json.upstream 拉取规则文件（Loon .rule / Surge .list / kelee .lsr 三种格式都能吃）
+ *   1. 读 upstreams.txt（一行一个规则源地址）拉取规则文件
+ *      （Loon .rule / Surge .list / kelee .lsr 三种格式都能吃）
  *   2. 自动分类成 domain / ipcidr / classical 三组，并按优先级跨规则集去重
  *   3. 生成 mihomo rule-provider yaml  →  dist/mihomo/
  *   4. 生成 FlClash 覆写脚本           →  dist/flclash-override.js
@@ -24,6 +25,91 @@ const CDN = src.cdnBase;
 const FORCE = process.argv.includes('--fetch');
 const DROP = new Set((src.dropRuleTypes || []).map(x => x.toUpperCase()));
 
+// ══════════════════════════════════════════════
+// upstreams.txt —— 唯一手工维护的规则源清单
+//
+// 一行一条：  [策略] 地址 [选项...]
+// 这样加/减一个规则源只需要改一行文本，不用碰 JSON，也不用管 provider 命名。
+// ══════════════════════════════════════════════
+const UPSTREAM_TXT = path.join(ROOT, 'upstreams.txt');
+const POLICY_ALIAS = { R: 'REJECT', D: 'DIRECT', P: 'PROXY', BLOCK: 'REJECT' };
+
+function sanitizeName(s) {
+  return s.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'Source';
+}
+
+// 策略省略时按地址/名字里的关键词猜。猜不出就报错，不瞎默认。
+function guessPolicy(url, name) {
+  const h = (url + ' ' + name).toLowerCase();
+  if (/(reject|adblock|adrules|adguard|rejectad|ads?\b|ban)/.test(h)) return 'REJECT';
+  if (/(direct|cloudflarecn|china|domestic|intranet)/.test(h)) return 'DIRECT';
+  if (/(proxy|gfw|oversea|foreign)/.test(h)) return 'PROXY';
+  return null;
+}
+
+function parseUpstreams(text, file) {
+  const out = [];
+  const used = new Set();
+
+  text.split(/\r?\n/).forEach((raw, idx) => {
+    const no = idx + 1;
+    // 支持行尾注释：第一个「空白 + #」之后全部丢掉
+    const line = raw.replace(/(^|\s)#.*$/, '').trim();
+    if (!line) return;
+
+    let url = null, policy = null, name = null;
+    const flags = {};
+
+    for (const tok of line.split(/\s+/)) {
+      if (/^https?:\/\//i.test(tok)) { url = tok; continue; }
+      if (/^name=.+/i.test(tok)) { name = tok.slice(5); continue; }
+      const m = tok.match(/^(flclash|loon|openclash):(off|false|0)$/i);
+      if (m) { flags[m[1].toLowerCase()] = false; continue; }
+      const up = tok.toUpperCase();
+      if (POLICY_ALIAS[up] || up === 'REJECT' || up === 'DIRECT' || up === 'PROXY') {
+        policy = POLICY_ALIAS[up] || up;
+        continue;
+      }
+      throw new Error(file + ' 第 ' + no + ' 行无法识别：「' + tok + '」\n' +
+        '  允许的写法：REJECT/DIRECT/PROXY（或 R/D/P）、http(s) 地址、name=名字、flclash:off、loon:off、openclash:off');
+    }
+
+    if (!url) {
+      throw new Error(file + ' 第 ' + no + ' 行没找到 http(s) 地址：「' + line + '」');
+    }
+
+    // 名字：显式 name= 优先，否则取 URL 最后一段去扩展名
+    let base = name;
+    if (!base) {
+      const seg = decodeURIComponent(url.split('?')[0].split('#')[0].split('/').pop() || '');
+      base = seg.replace(/\.[A-Za-z0-9]+$/, '');
+    }
+    base = sanitizeName(base);
+    let nm = base, n = 2;
+    while (used.has(nm)) nm = base + '_' + (n++);
+    used.add(nm);
+
+    if (!policy) policy = guessPolicy(url, nm);
+    if (!policy) {
+      throw new Error(file + ' 第 ' + no + ' 行推断不出策略，请显式写 REJECT / DIRECT / PROXY：\n  ' + url);
+    }
+
+    const e = { name: nm, url, policy };
+    for (const k of ['flclash', 'loon', 'openclash']) {
+      if (flags[k] === false) e[k] = false;
+    }
+    out.push(e);
+  });
+
+  if (!out.length) throw new Error(file + ' 里一条规则源都没有');
+  return out;
+}
+
+if (fs.existsSync(UPSTREAM_TXT)) {
+  src.upstream = parseUpstreams(fs.readFileSync(UPSTREAM_TXT, 'utf8'), 'upstreams.txt');
+}
+if (!Array.isArray(src.upstream)) src.upstream = [];
+
 function ensure(d) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
@@ -36,12 +122,33 @@ async function loadRemote(u) {
   if (typeof fetch !== 'function') {
     throw new Error('当前 Node 没有 fetch，请先准备 _upstream 缓存或升级 Node 到 18+');
   }
-  const res = await fetch(u.url);
-  if (!res.ok) throw new Error(u.name + ' -> HTTP ' + res.status);
-  const txt = await res.text();
-  ensure(CACHE);
-  fs.writeFileSync(cache, txt, 'utf8');
-  return txt;
+  // 原地址失败时自动走 jsDelivr 镜像重试一次（GitHub raw 在 CI 上偶尔 5xx）
+  const tries = [u.url];
+  const alt = toCdn(u.url);
+  if (alt !== u.url) tries.push(alt);
+
+  let lastErr = null;
+  for (const url of tries) {
+    try {
+      const res = await fetch(url, {
+        redirect: 'follow',
+        headers: { 'user-agent': 'flclash-ruleset-builder' }
+      });
+      if (!res.ok) {
+        lastErr = new Error('HTTP ' + res.status + '  ' + url);
+        continue;
+      }
+      const txt = await res.text();
+      ensure(CACHE);
+      fs.writeFileSync(cache, txt, 'utf8');
+      return txt;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw new Error('下载失败【' + u.name + '】\n  地址: ' + u.url +
+    '\n  原因: ' + (lastErr && lastErr.message) +
+    '\n  解法: 换个地址；或者这源只有你的设备能访问，就在 upstreams.txt 该行末尾加 flclash:off');
 }
 
 // 合法域名：字母数字开头，允许 . - _ *（* 是泛域名通配）

@@ -3,6 +3,7 @@ name: build
 on:
   push:
     paths:
+      - 'upstreams.txt'
       - 'sources.json'
       - 'tools/build.js'
       - '.github/workflows/build.yml'
