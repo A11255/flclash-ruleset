@@ -1,8 +1,7 @@
 # NAME: Proxy_Rule
 # POLICY: PROXY   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
-# GENERATED: 2026-10-27 08:57:07 UTC
 # SOURCES: GlobalMedia, GlobalMedia_Domain, Global, Global_Domain, Proxy, Proxy_Domain
-# TOTAL: 36244
+# TOTAL: 36243
 # 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Proxy_Rule.rule,PROXY
 
 DOMAIN-KEYWORD,1drv
@@ -2260,7 +2259,6 @@ DOMAIN-SUFFIX,aphe.ac.uk
 DOMAIN-SUFFIX,api-extractor.com
 DOMAIN-SUFFIX,api-p.videomarket.jp
 DOMAIN-SUFFIX,api.ai
-DOMAIN-SUFFIX,api.amplitude.com
 DOMAIN-SUFFIX,api.githubcopilot.com
 DOMAIN-SUFFIX,api.groq.com
 DOMAIN-SUFFIX,api.mixpanel.com

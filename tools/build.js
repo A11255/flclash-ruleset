@@ -355,12 +355,7 @@ function main(config) {
 function buildLoonRules(groups) {
   const dir = path.join(DIST, 'loon');
   ensure(dir);
-  // 清掉上一轮的产物，避免删了组之后留下孤儿文件
-  for (const f of fs.readdirSync(dir)) {
-    if (f.endsWith('.rule')) fs.unlinkSync(path.join(dir, f));
-  }
-
-  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const keep = new Set();
   const stat = [];
 
   for (const g of groups) {
@@ -375,17 +370,30 @@ function buildLoonRules(groups) {
       lines.push((c.includes(':') ? 'IP-CIDR6,' : 'IP-CIDR,') + c + ',no-resolve');
     }
 
+    // 头部刻意不写生成时间：否则每次 CI 都产生一份纯时间戳的 diff，
+    // 仓库日志会被无意义提交灌满，也看不出规则到底有没有变。
     const head = [
       '# NAME: ' + g.name,
       '# POLICY: ' + g.policy + '   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）',
-      '# GENERATED: ' + stamp,
       '# SOURCES: ' + g.members.join(', '),
       '# TOTAL: ' + lines.length,
       '# 用法: RULE-SET,' + CDN + '/dist/loon/' + g.name + '.rule,' + g.policy,
     ];
 
-    fs.writeFileSync(path.join(dir, g.name + '.rule'), head.join('\n') + '\n\n' + lines.join('\n') + '\n', 'utf8');
+    // 内容没变就不落盘，避免 mtime 变动
+    const fname = g.name + '.rule';
+    const out = path.join(dir, fname);
+    keep.add(fname);
+    const content = head.join('\n') + '\n\n' + lines.join('\n') + '\n';
+    if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== content) {
+      fs.writeFileSync(out, content, 'utf8');
+    }
     stat.push({ name: g.name, lines: lines.length });
+  }
+
+  // 删掉这一轮不再需要的旧文件（组被删掉或改名了）
+  for (const f of fs.readdirSync(dir)) {
+    if (f.endsWith('.rule') && !keep.has(f)) fs.unlinkSync(path.join(dir, f));
   }
   return stat;
 }
