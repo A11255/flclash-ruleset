@@ -2199,6 +2199,7 @@ payload:
   - '+.api-extractor.com'
   - '+.api-p.videomarket.jp'
   - '+.api.ai'
+  - '+.api.amplitude.com'
   - '+.api.githubcopilot.com'
   - '+.api.groq.com'
   - '+.api.mixpanel.com'
