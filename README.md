@@ -81,7 +81,25 @@ RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Proxy
 
 Loon 端比 FlClash 端多 202 条规则——`USER-AGENT`（188 条）和 `URL-REGEX`（15 条）mihomo 不支持，只写进了 `.rule` 文件。
 
-> iOS 直连 `raw.githubusercontent.com` 经常超时，所以 Loon 地址统一用 jsDelivr。这个路径是 `dist/loon/` 下的小文件（单个最大 6.7 MB），jsDelivr 的缓存表现正常。
+### 文件大小与下载速度（实测 2026-10-27）
+
+| 文件 | 条数 | 体积 |
+|---|---|---|
+| `Reject_Rule.rule` | 306365 | 9.8 MB |
+| `Direct_Rule.rule` | 122944 | 3.3 MB |
+| `Proxy_Rule.rule` | 36243 | 1.1 MB |
+| 其余 7 个 | 合计 2641 | 合计 553 KB |
+
+`Reject_Rule` 偏大，是因为每行都写了显式的 `DOMAIN-SUFFIX,` 前缀（裸域名格式能省 40%，但 Loon 对裸域名的处理没有官方保证，这里不赌）。
+
+**jsDelivr 第一次请求要回源 GitHub，9.8 MB 花了 26 秒；命中边缘缓存后 1.6–10 秒。** iOS 上第一次加载会慢，之后就正常。raw.githubusercontent.com 直连实测要 114 秒，不建议。
+
+如果 jsDelivr 拉不动，把地址前缀换成 gh-proxy（和 FlClash 脚本用的是同一条线路）：
+
+```
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main   ← 默认
+https://gh-proxy.com/https://raw.githubusercontent.com/A11255/flclash-ruleset/main   ← 备选
+```
 
 ## 规则源
 
