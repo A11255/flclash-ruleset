@@ -28,9 +28,9 @@ REJECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Pr
 REJECT   https://adrules.top/adrules.list
 REJECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/rejectAd.list
 REJECT   https://limbopro.com/Adblock4limbo_surge.list            name=Adblock4limbo loon:off
+REJECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/apple_update.list
 
 # ── 系统服务直连：推送/更新不能被代理带走 ──────────────────────────────
-DIRECT   https://github.com/fmz200/wool_scripts/raw/main/Loon/rule/apple_update.list
 DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Google%20FCM.list   name=Google_FCM
 DIRECT   https://github.com/dler-io/Rules/raw/refs/heads/main/Surge/Surge%203/Provider/Apple%20Push.list   name=Apple_Push
 
