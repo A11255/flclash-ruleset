@@ -213,7 +213,7 @@ var RULES = [
 "RULE-SET,adrules,REJECT",
 "RULE-SET,rejectAd,REJECT",
 "RULE-SET,Adblock4limbo,REJECT",
-"RULE-SET,apple_update,DIRECT",
+"RULE-SET,apple_update,REJECT",
 "RULE-SET,Google_FCM,DIRECT",
 "RULE-SET,Apple_Push,DIRECT",
 "RULE-SET,Direct_Rule,DIRECT",
