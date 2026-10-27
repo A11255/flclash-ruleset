@@ -1,8 +1,8 @@
 # NAME: rejectAd
 # POLICY: REJECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
-# GENERATED: 2026-10-27 08:54:59 UTC
+# GENERATED: 2026-10-27 08:57:07 UTC
 # SOURCES: rejectAd
-# TOTAL: 618
+# TOTAL: 617
 # 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/rejectAd.rule,REJECT
 
 DOMAIN-KEYWORD,-ad-sign.byteimg.com
@@ -613,7 +613,6 @@ DOMAIN-SUFFIX,yunxinfw.com
 DOMAIN-SUFFIX,z.moatads.com
 DOMAIN-SUFFIX,z.sora.yoyi.com.cn
 DOMAIN-SUFFIX,z1.zedo.com
-DOMAIN-SUFFIX,zhangyuyidong.cn
 DOMAIN-SUFFIX,zlsdk.1rtb.net
 USER-AGENT,AVOS*
 IP-CIDR,114.132.165.205/32,no-resolve

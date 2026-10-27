@@ -1,6 +1,6 @@
 # NAME: Direct_Rule
 # POLICY: DIRECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
-# GENERATED: 2026-10-27 08:54:59 UTC
+# GENERATED: 2026-10-27 08:57:07 UTC
 # SOURCES: ChinaMax, ChinaMax_Domain
 # TOTAL: 122944
 # 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Direct_Rule.rule,DIRECT
