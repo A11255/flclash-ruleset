@@ -1,7 +1,7 @@
 # NAME: Direct_Rule
 # POLICY: DIRECT   （在 Loon 的 [Rule] 段用 RULE-SET 指定，本文件不含策略）
 # SOURCES: ChinaMax, ChinaMax_Domain
-# TOTAL: 122944
+# TOTAL: 122945
 # 用法: RULE-SET,https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/loon/Direct_Rule.rule,DIRECT
 
 DOMAIN-KEYWORD,.tmall.com
@@ -33787,6 +33787,7 @@ DOMAIN-SUFFIX,filfox.info
 DOMAIN-SUFFIX,fillersmart.com
 DOMAIN-SUFFIX,fillseo.com
 DOMAIN-SUFFIX,film-yuelongchina.com
+DOMAIN-SUFFIX,filmorigin.com
 DOMAIN-SUFFIX,fily.fun
 DOMAIN-SUFFIX,fim34s.com
 DOMAIN-SUFFIX,fimmu.com
@@ -56308,6 +56309,7 @@ DOMAIN-SUFFIX,kakamobi.com
 DOMAIN-SUFFIX,kakappt.com
 DOMAIN-SUFFIX,kakashuzi.net
 DOMAIN-SUFFIX,kakatx.com
+DOMAIN-SUFFIX,kakaxing.com
 DOMAIN-SUFFIX,kakayuy.net
 DOMAIN-SUFFIX,kaken-china.com
 DOMAIN-SUFFIX,kaku-scdn.com
@@ -114084,7 +114086,6 @@ IP-CIDR,154.72.44.0/24,no-resolve
 IP-CIDR,154.72.47.0/24,no-resolve
 IP-CIDR,154.8.128.0/17,no-resolve
 IP-CIDR,154.8.48.0/20,no-resolve
-IP-CIDR,154.84.180.0/24,no-resolve
 IP-CIDR,154.89.32.0/20,no-resolve
 IP-CIDR,155.102.0.0/16,no-resolve
 IP-CIDR,155.126.176.0/23,no-resolve
@@ -114621,7 +114622,7 @@ IP-CIDR,175.24.0.0/14,no-resolve
 IP-CIDR,175.30.0.0/15,no-resolve
 IP-CIDR,175.42.0.0/15,no-resolve
 IP-CIDR,175.44.0.0/16,no-resolve
-IP-CIDR,175.45.179.0/24,no-resolve
+IP-CIDR,175.45.178.0/23,no-resolve
 IP-CIDR,175.46.0.0/15,no-resolve
 IP-CIDR,175.48.0.0/12,no-resolve
 IP-CIDR,175.64.0.0/11,no-resolve
