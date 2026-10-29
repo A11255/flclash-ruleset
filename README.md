@@ -136,6 +136,25 @@ https://cdn.jsdelivr.net/gh/A11255/Custom_OpenClash_Rules@main/overwrite/yaml/Cu
 
 **17 个 mrs，合计 481632 条**，另有 359 条关键词规则留在 yaml 里。
 
+## ACL4SSR 版配置（不需要转换器）
+
+ACL4SSR 官方那套要用 subconverter 后端把「订阅 + `.ini`」合成配置，公共后端现在基本全挂了（实测 `dler.io`、`xeton.dev` 都是 000，`d1.mk` 直接跳合租推广页）。
+
+`dist/acl4ssr/clash.yaml` 是 `ACL4SSR_Online_Full.ini` 的**原样翻译**：29 个策略组、33 条规则，组名和顺序一个字没改。只做了两件事：
+
+1. 把节点来源换成 mihomo 原生的 `proxy-providers` —— 订阅地址填在 provider 里，mihomo 自己拉自己解析，不需要转换服务
+2. 规则集 URL 从 `raw.githubusercontent.com` 换成 jsDelivr
+
+配套的 OpenClash 覆写模块在另一个仓库：
+
+```
+https://cdn.jsdelivr.net/gh/A11255/Custom_OpenClash_Rules@main/overwrite/yaml/ACL4SSR.conf
+```
+
+变量填 `EN_KEY1=订阅链接`，模块会用 ruby 把地址写进 `proxy-providers.sub.url`。
+
+**跟着上游更新：** CI 每次重新拉 `ACL4SSR_Online_Full.ini` 再重新翻译，ACL4SSR 改了模板这边自动跟上。想换别的模板（Mini / NoAuto / AdblockPlus），改 `.github/workflows/build.yml` 里那行文件名即可。
+
 ## 规则源
 
 清单在 **`upstreams.txt`**，一行一个地址。**行序 = 优先级**，上面的先匹配。
