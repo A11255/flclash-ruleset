@@ -29,10 +29,15 @@ jobs:
         run: |
           set -euo pipefail
           # 上游模板每次 CI 重新拉，保证跟着 ACL4SSR 的更新走
-          curl -fsSL --retry 3 -o /tmp/ACL4SSR_Online_Full.ini \
-            https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full.ini
-          mkdir -p dist/acl4ssr
-          node tools/build-acl4ssr.js /tmp/ACL4SSR_Online_Full.ini dist/acl4ssr/clash.yaml
+          mkdir -p dist/acl4ssr /tmp/acl4ssr-ini
+          for t in ACL4SSR_Online_Full ACL4SSR_Online_Full_AdblockPlus; do
+            curl -fsSL --retry 3 -o "/tmp/acl4ssr-ini/$t.ini" \
+              "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/$t.ini"
+          done
+          node tools/build-acl4ssr.js /tmp/acl4ssr-ini/ACL4SSR_Online_Full.ini \
+            dist/acl4ssr/clash.yaml
+          node tools/build-acl4ssr.js /tmp/acl4ssr-ini/ACL4SSR_Online_Full_AdblockPlus.ini \
+            dist/acl4ssr/clash-adblockplus.yaml
 
       - name: 下载 mihomo 内核
         run: |
@@ -109,13 +114,15 @@ jobs:
 
           # ACL4SSR 配置：组数和规则数对得上，且订阅占位符还在
           # （占位符被换成真地址说明有人手改了产物，应该改模板而不是改产物）
-          g=$(grep -c '^  - name:' dist/acl4ssr/clash.yaml)
-          r=$(sed -n '/^rules:/,$p' dist/acl4ssr/clash.yaml | grep -c '^  - ')
-          echo "ACL4SSR: $g 个策略组 / $r 条规则"
-          [ "$g" -ge 20 ] || { echo "::error::策略组太少，模板解析可能出错"; exit 1; }
-          [ "$r" -ge 25 ] || { echo "::error::规则太少，模板解析可能出错"; exit 1; }
-          grep -q 'SUBSCRIPTION_URL' dist/acl4ssr/clash.yaml \
-            || { echo "::error::订阅占位符丢了，模块会填不进去"; exit 1; }
+          for f in dist/acl4ssr/clash.yaml dist/acl4ssr/clash-adblockplus.yaml; do
+            g=$(grep -c '^  - name:' "$f")
+            r=$(sed -n '/^rules:/,$p' "$f" | grep -c '^  - ')
+            echo "$(basename $f): $g 个策略组 / $r 条规则"
+            [ "$g" -ge 20 ] || { echo "::error::$f 策略组太少，模板解析可能出错"; exit 1; }
+            [ "$r" -ge 25 ] || { echo "::error::$f 规则太少，模板解析可能出错"; exit 1; }
+            grep -q 'SUBSCRIPTION_URL' "$f" \
+              || { echo "::error::$f 订阅占位符丢了，模块会填不进去"; exit 1; }
+          done
           echo "ACL4SSR 产物校验通过"
 
       - name: 提交产物

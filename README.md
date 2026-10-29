@@ -145,15 +145,29 @@ ACL4SSR 官方那套要用 subconverter 后端把「订阅 + `.ini`」合成配�
 1. 把节点来源换成 mihomo 原生的 `proxy-providers` —— 订阅地址填在 provider 里，mihomo 自己拉自己解析，不需要转换服务
 2. 规则集 URL 从 `raw.githubusercontent.com` 换成 jsDelivr
 
-配套的 OpenClash 覆写模块在另一个仓库：
+配套的 OpenClash 覆写模块，在同一仓库：
+
+| 用哪个 | 配置 | 模块 |
+|---|---|---|
+| 标准 Full | `dist/acl4ssr/clash.yaml` | `dist/acl4ssr/ACL4SSR.conf` |
+| Full + AdblockPlus | `dist/acl4ssr/clash-adblockplus.yaml` | `dist/acl4ssr/ACL4SSR_AdblockPlus.conf` |
 
 ```
-https://cdn.jsdelivr.net/gh/A11255/Custom_OpenClash_Rules@main/overwrite/yaml/ACL4SSR.conf
+https://cdn.jsdelivr.net/gh/A11255/flclash-ruleset@main/dist/acl4ssr/ACL4SSR_AdblockPlus.conf
 ```
 
 变量填 `EN_KEY1=订阅链接`，模块会用 ruby 把地址写进 `proxy-providers.sub.url`。
 
-**跟着上游更新：** CI 每次重新拉 `ACL4SSR_Online_Full.ini` 再重新翻译，ACL4SSR 改了模板这边自动跟上。想换别的模板（Mini / NoAuto / AdblockPlus），改 `.github/workflows/build.yml` 里那行文件名即可。
+两个版本的差别：
+
+| | 策略组 | 规则 | 广告拦截 |
+|---|---|---|---|
+| `ACL4SSR_Online_Full` | 29 | 33 | BanAD + BanProgramAD |
+| `ACL4SSR_Online_Full_AdblockPlus` | 33 | 37 | 上面两张 + **BanEasyList + BanEasyListChina + BanEasyPrivacy** |
+
+AdblockPlus 版多两个组：`🆎 AdBlock`（EasyList 系）和 `🛡️ 隐私防护`（追踪器）。
+
+**跟着上游更新：** CI 每次重新拉两个 `.ini` 再重新翻译，ACL4SSR 改了模板这边自动跟上。
 
 ## 规则源
 
